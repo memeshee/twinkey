@@ -1,0 +1,17 @@
+{
+  "name": "twinkey-tooling",
+  "private": true,
+  "type": "module",
+  "description": "Development scripts: inspect Portaldot V3 revive extrinsics, deploy contracts, run parity checks",
+  "scripts": {
+    "inspect": "node inspect-revive.mjs",
+    "map": "node map-account.mjs",
+    "deploy": "node deploy.mjs"
+  },
+  "dependencies": {
+    "@polkadot/api": "^16.5.6",
+    "@polkadot/util-crypto": "^14.0.1",
+    "solc": "^0.8.30",
+    "viem": "^2.38.5"
+  }
+}

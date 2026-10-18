@@ -1,0 +1,149 @@
+{
+  "abi": [
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "newValue",
+          "type": "uint256"
+        }
+      ],
+      "name": "ValueAdded",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "value",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "callCount",
+          "type": "uint256"
+        }
+      ],
+      "name": "ValueSet",
+      "type": "event"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "addValue",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "callCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "lastCaller",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "read",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "v",
+          "type": "uint256"
+        }
+      ],
+      "name": "setValue",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "value",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x6080604052348015600f57600080fd5b506102ae8061001f6000396000f3fe6080604052600436106100555760003560e01c80632113522a1461005a5780633fa4f245146100975780634b28f9a2146100bb57806355241077146100d157806357de26a4146100f35780635b9af12b1461012c575b600080fd5b34801561006657600080fd5b5060015461007a906001600160a01b031681565b6040516001600160a01b0390911681526020015b60405180910390f35b3480156100a357600080fd5b506100ad60005481565b60405190815260200161008e565b3480156100c757600080fd5b506100ad60025481565b3480156100dd57600080fd5b506100f16100ec366004610238565b61013f565b005b3480156100ff57600080fd5b50600054600154600254604080519384526001600160a01b0390921660208401529082015260600161008e565b6100ad61013a366004610238565b6101ab565b6000818155600180546001600160a01b031916331781556002805491929091610169908490610251565b9091555050600254604051908152819033907fc0e9036d619701c94569e1462d8120ef4a6d2b15a70d27cc942fd29ae2cc0e599060200160405180910390a350565b6000816000808282546101be9190610251565b9091555050600180546001600160a01b03191633178155600280546000906101e7908490610251565b909155505060005460405133917f804c807c54b57d3c86f6030ac7bf3c3488e8b77f71bf64d3c9284d6b91fe27e19161022891868252602082015260400190565b60405180910390a2505060005490565b60006020828403121561024a57600080fd5b5035919050565b8082018082111561027257634e487b7160e01b600052601160045260246000fd5b9291505056fea26469706673582212203bec81d74d49ad4607b6c4433c97a8c6214f7d486f30532371a2f326122dbd6b64736f6c63430008250033"
+}
