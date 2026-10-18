@@ -24,9 +24,17 @@ The consequence, today, on the live testnet:
 - A dApp built with `viem` / `wagmi` / `ethers` cannot talk to a Portaldot wallet at all: those
   libraries expect an EOA that signs `eth_transact`-style transactions, while the account that
   actually holds the funds is an sr25519 Substrate account.
-- The runtime *does* allow the native account to drive contracts (`revive.call`,
-  `revive.instantiate_with_code`), but that path is undocumented, unencoded, and no wallet, SDK, or
-  example in the ecosystem uses it.
+- The runtime *does* allow a native account to drive contracts (`revive.call`,
+  `revive.instantiate_with_code`), and the Portaldot team's own guide documents it as a manual
+  four-step procedure in the node console: generate calldata, dry-run through `reviveApi.call` to
+  obtain `weight_limit` and `storage_deposit_limit`, then submit `Revive.call` from the
+  Extrinsics tab. Nothing in the ecosystem implements that flow — no wallet, no SDK, no dApp.
+- In the other direction, the EVM write path that MetaMask/Remix users are told to use **does not
+  accept transactions from an external EOA on the current testnet build** (every type, fee and gas
+  combination returns `Invalid Transaction`; `revive.originalAccount` is unset for the EOA while its
+  balance is displayed). Reads, `eth_call` and `eth_estimateGas` work normally. Full reproduction:
+  [`docs/FINDINGS.md`](docs/FINDINGS.md).
+
 
 So the chain's headline feature — EVM compatibility — is unusable by the people the chain already
 has. TwinKey closes that gap.
@@ -108,8 +116,12 @@ docs/       VERIFIED-FACTS.md (chain facts with the commands that produced them)
 | Portaldot V3 testnet reachable, chain id, decimals, address mapping | **real, verified by `curl`** — `docs/VERIFIED-FACTS.md` |
 | A registered testnet wallet is funded | **real** — mapped `H160` held 499.9 tPOT at 2026-10-18T23:30Z |
 | Native `AccountId32` → `H160` mapping via runtime API | **real** — `ReviveApi_address` returns `0xe70f…d934` for `5DM…Bko9C7` |
-| Contract deployment on the testnet | *in progress* — will be documented with tx hash + block |
+| Contract deployed on the testnet by an ss58 key | **real** — `0x19d5aa109cbf0d4e0a126f1438ea73b619cb7725`, tx `0x1750677…cfe02f` |
+| Contract called by the same ss58 key, state read back over EVM RPC | **real** — block `0xfd7a389…ee8211`, `read()` → `(42, 0xe70f…d934, 1)` |
+| Dry-run → exact `weight_limit` / `storage_deposit` → execute | **real** — block `0x53f6d82…e3f485`, `weightRequired {506041677, 31937}` |
+| External EOA can write over the EVM JSON-RPC | **no** — `Invalid Transaction` for every tx type; see `docs/FINDINGS.md`. Reads work. |
 | Parity verdict for a call | *in progress* — no claim until the verifier prints it |
+
 
 No mocked behaviour is presented as real here. Anything simulated is labelled as such in the app
 itself and in the README at submission time.
@@ -134,6 +146,15 @@ itself and in the README at submission time.
   make those differences explicit instead of surprising.
 - Roadmap: multi-contract batching, ERC-20 precompile support, and a packaged provider
   (`npm i twinkey`) that any Portaldot dApp can drop in.
+
+## References
+
+- **PortaldotV3 Testnet Guide** (official, English translation) —
+  <https://github.com/ItsCogumellum/portaldot-v3-testnet-guide>. Its §3.3.2/§3.4.4 document the
+  manual native-call flow this project automates; its §3.4.2 documents the H160 ↔ SS58 funding trick;
+  `demo/04_solidity_demo.py` is the reference implementation of the dry-run in Python. TwinKey's
+  `tooling/call-dryrun.mjs` is the same flow in TypeScript.
+- Polkadot SDK `pallet_revive` — `AddressMapper`, `ContractResult`, storage-deposit semantics.
 
 ## License
 
