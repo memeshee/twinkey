@@ -14,6 +14,13 @@ The screenshot above is the deployed app: both faces of one account resolved fro
 contract state over `eth_call`, a real write, decoded `revive.ContractEmitted` events, and the Rust
 verifier's verdict for block 90995.
 
+**Live demo:** <https://twinkey-h2ldrrfze-memeshe-s-projects.vercel.app>
+
+The deployed instance runs the write path with a **dedicated throwaway demo account**
+(`5He7dvDWyMs7DAiAVBsfczFZPEKVa5tAQwLQjNTSq3beUAHZ` → `0xfd2d914e…62e7`), funded with 5 tPOT and
+rate limited to 3 writes per minute per IP, so the write button works for a judge without an
+extension. It is deliberately *not* the project key. Connect your own wallet to sign as yourself.
+
 ---
 
 ## The problem

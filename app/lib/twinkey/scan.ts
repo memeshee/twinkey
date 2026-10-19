@@ -1,4 +1,3 @@
-import type { ApiPromise } from "@polkadot/api";
 import { getApi } from "./chain";
 
 /**
@@ -31,8 +30,32 @@ export type ScanResult = {
   to: number;
   scanned: number;
   candidateBlocks: number;
+  cacheHits: number;
   events: ReviveEvent[];
 };
+
+type CachedBlock = { hash: string | null; events: ReviveEvent[] };
+
+/**
+ * Blocks are immutable, so a block examined once never needs examining again. On a serverless host
+ * the same instance serves several requests, and a rescan of the last 300 blocks drops to zero round
+ * trips for the part that was already seen.
+ */
+const blockCache = new Map<number, CachedBlock>();
+const CACHE_LIMIT = 20_000;
+
+function remember(n: number, value: CachedBlock) {
+  if (blockCache.size >= CACHE_LIMIT) {
+    // Drop the oldest quarter rather than letting the map grow without bound.
+    const drop = Math.floor(CACHE_LIMIT / 4);
+    let i = 0;
+    for (const key of blockCache.keys()) {
+      blockCache.delete(key);
+      if (++i >= drop) break;
+    }
+  }
+  blockCache.set(n, value);
+}
 
 export async function scanRange(
   from: number,
@@ -48,24 +71,45 @@ export async function scanRange(
   const numbers: number[] = [];
   for (let n = start; n <= end; n++) numbers.push(n);
 
-  // --- pass 1: which blocks are worth looking at? ---------------------------------------
-  const candidates: { n: number; hash: string }[] = [];
+  const events: ReviveEvent[] = [];
+  const pending: { n: number; hash: string }[] = [];
+  let candidateBlocks = 0;
+  let cacheHits = 0;
+
+  // --- pass 1: reuse what we already know, and shortlist new candidate blocks -----------
   await mapLimit(numbers, concurrency, async (n) => {
+    const hit = blockCache.get(n);
+    if (hit) {
+      cacheHits++;
+      if (hit.events.length) {
+        candidateBlocks++;
+        events.push(...hit.events);
+      }
+      return;
+    }
     try {
       const hash = await api.rpc.chain.getBlockHash(n);
-      if (!hash || hash.isEmpty) return;
+      if (!hash || hash.isEmpty) {
+        remember(n, { hash: null, events: [] });
+        return;
+      }
       const block = await api.rpc.chain.getBlock(hash);
-      if (block.block.extrinsics.length >= 2) candidates.push({ n, hash: hash.toHex() });
+      if (block.block.extrinsics.length >= 2) {
+        pending.push({ n, hash: hash.toHex() });
+      } else {
+        remember(n, { hash: null, events: [] });
+      }
     } catch {
-      /* a block we cannot read is skipped, and the count reports what was scanned */
+      /* a block we cannot read is skipped; `scanned` still reports the range covered */
     }
   });
 
-  candidates.sort((a, b) => a.n - b.n);
+  // --- pass 2: decode only the shortlisted blocks --------------------------------------
+  pending.sort((a, b) => a.n - b.n);
+  candidateBlocks += pending.length;
 
-  // --- pass 2: decode the event list of those blocks only --------------------------------
-  const events: ReviveEvent[] = [];
-  await mapLimit(candidates, 4, async ({ n, hash }) => {
+  await mapLimit(pending, 4, async ({ n, hash }) => {
+    const decoded: ReviveEvent[] = [];
     try {
       const apiAt = await api.at(hash);
       const records = (await apiAt.query.system.events()) as any;
@@ -79,22 +123,20 @@ export async function scanRange(
         };
         const kind = event.method as ReviveEvent["kind"];
         if (kind === "ContractEmitted") {
-          const contract = String(byName("contract", 0)).toLowerCase();
+          const topics: string[] = (byName("topics", 2)?.toJSON?.() ?? []).map((t: any) => String(t).toLowerCase());
           const data = String(byName("data", 1));
-          const topicsRaw = byName("topics", 2);
-          const topics: string[] = (topicsRaw?.toJSON?.() ?? []).map((t: any) => String(t).toLowerCase());
-          events.push({
+          decoded.push({
             blockNumber: n,
             blockHash: hash,
             eventIndex: i,
             kind,
-            contract,
+            contract: String(byName("contract", 0)).toLowerCase(),
             data,
             topics,
             parsed: decode(topics, data),
           });
         } else if (kind === "Instantiated") {
-          events.push({
+          decoded.push({
             blockNumber: n,
             blockHash: hash,
             eventIndex: i,
@@ -103,17 +145,24 @@ export async function scanRange(
             contract: String(byName("contract", 1)).toLowerCase(),
           });
         } else {
-          const json = event.toJSON() as Record<string, unknown>;
-          events.push({ blockNumber: n, blockHash: hash, eventIndex: i, kind, data: JSON.stringify(json) });
+          decoded.push({
+            blockNumber: n,
+            blockHash: hash,
+            eventIndex: i,
+            kind,
+            data: JSON.stringify(event.toJSON()),
+          });
         }
       });
+      remember(n, { hash, events: decoded });
+      events.push(...decoded);
     } catch {
-      /* skip undecodable block, reported via `scanned` */
+      /* leave the block uncached so a later request retries it */
     }
   });
 
   events.sort((a, b) => a.blockNumber - b.blockNumber || a.eventIndex - b.eventIndex);
-  return { from: start, to: end, scanned: numbers.length, candidateBlocks: candidates.length, events };
+  return { from: start, to: end, scanned: numbers.length, candidateBlocks, cacheHits, events };
 }
 
 async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {

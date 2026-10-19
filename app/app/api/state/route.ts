@@ -73,7 +73,7 @@ export async function GET(req: Request) {
         codeBytes: code && code !== "0x" ? (code.length - 2) / 2 : 0,
         state: contractState,
       },
-      demoSigning: Boolean(process.env.PORTALDOT_KEY),
+      demoSigning: Boolean(process.env.PORTALDOT_KEY || process.env.PORTALDOT_SECRET_URI),
     });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message ?? e) }, { status: 503 });

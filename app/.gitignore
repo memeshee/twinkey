@@ -1,0 +1,6 @@
+.vercel
+.env*
+
+# build artifacts
+tsconfig.tsbuildinfo
+next-env.d.ts
