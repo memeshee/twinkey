@@ -369,7 +369,12 @@ async fn verify_tx(
         "scanned_from": start,
         "scanned_to": head,
         "hint": "block hashes are resolved exactly; extrinsic hashes need a bounded scan because the RPC has no tx index"
-    })))
+    }))
+    .with_summary(vec![
+        format!("{hash} is not the hash of a block on this chain"),
+        format!("scanned blocks {start}..={head} for an extrinsic with that hash and found none"),
+        "a deeper search needs TX_SCAN_BLOCKS raised (each block costs two RPC calls)".to_string(),
+    ]))
 }
 
 // ---------------------------------------------------------------------------
@@ -428,12 +433,11 @@ async fn parity(
                     format!("caller_is_mapped_signer[{}]", short(&contract)),
                     ok_caller,
                     format!(
-                        "event caller {} vs ReviveApi_address({}) = {} (SS58 {}){}",
+                        "event caller {} vs H160 {} mapped from SS58 {} by ReviveApi_address{}",
                         log.caller,
-                        st.signer_ss58,
                         signer_h160,
                         st.signer_ss58,
-                        if ok_caller { "" } else { " — MISMATCH" }
+                        if ok_caller { " (match)" } else { " — MISMATCH" }
                     ),
                 ));
 
@@ -450,7 +454,9 @@ async fn parity(
                             .unwrap_or(0);
                         let cur_count: u128 = r.call_count.parse().unwrap_or(0);
                         let cur_value = r.value.clone();
-                        let ev_value = log.value.clone();
+                        // ValueSet carries `value`; ValueAdded carries the resulting
+                        // `newValue`, which is the same kind of observation.
+                        let ev_value = log.value.clone().or_else(|| log.new_value.clone());
 
                         let count_ok = cur_count >= ev_count;
                         let (value_ok, value_detail) = match &ev_value {
@@ -596,7 +602,7 @@ async fn main() {
     let tx_scan_blocks: u64 = std::env::var("TX_SCAN_BLOCKS")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(32);
+        .unwrap_or(16);
 
     let signer_pubkey = match ss58::decode_account_id(&signer_ss58) {
         Ok(pk) => pk,

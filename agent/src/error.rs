@@ -15,15 +15,21 @@ pub struct ApiError {
     pub code: &'static str,
     pub message: String,
     pub detail: Option<Value>,
+    pub summary: Vec<String>,
 }
 
 impl ApiError {
     pub fn new(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
-        Self { status, code, message: message.into(), detail: None }
+        Self { status, code, message: message.into(), detail: None, summary: Vec::new() }
     }
 
     pub fn with_detail(mut self, detail: Value) -> Self {
         self.detail = Some(detail);
+        self
+    }
+
+    pub fn with_summary(mut self, summary: Vec<String>) -> Self {
+        self.summary = summary;
         self
     }
 
@@ -35,6 +41,7 @@ impl ApiError {
             code: "upstream_rpc_error",
             message: format!("{service} RPC call failed"),
             detail: Some(json!({ "service": service, "reason": detail.to_string() })),
+            summary: Vec::new(),
         }
     }
 
@@ -54,6 +61,7 @@ impl IntoResponse for ApiError {
             "error": self.code,
             "message": self.message,
             "detail": self.detail.unwrap_or(Value::Null),
+            "summary": self.summary,
         });
         (self.status, Json(body)).into_response()
     }
