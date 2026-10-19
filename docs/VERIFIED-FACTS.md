@@ -121,6 +121,28 @@ H160 can only spend through the EVM write path, which is broken. `revive.origina
 empty is the on-chain statement that no mapping lets the native side act for that address. The funds
 are not recoverable by either side today. Keep test funds in a native account you hold the key to.
 
+## Two traps that will cost you an hour
+
+**`Python-urllib` as a User-Agent gets a 403 from both endpoints** (Cloudflare WAF rule). It is the
+UA string, not the absence of one — every other value passes:
+
+```
+Python-urllib/3.14      -> 403
+python-requests/2.32.3  -> 200
+Go-http-client/2.0      -> 200
+node                    -> 200
+curl/8.5.0              -> 200
+Mozilla/5.0             -> 200
+<empty>                 -> 200
+```
+
+Scripts using bare `urllib.request` must set a header. `curl` and `python-requests` are unaffected.
+
+**`subxt` (Rust) cannot open the HTTPS endpoint** — `OnlineClient::from_insecure_url("https://…")`
+fails with ``` `https` not supported ```. It speaks ws/wss only, so a Rust client either connects
+`wss://test-node-v3.portaldot.dev` or does plain `reqwest` JSON-RPC against the HTTPS URL. TwinKey's
+verifier does both: subxt over wss for `System.Events`, raw JSON-RPC over HTTPS for the rest.
+
 ## Explorer reality
 
 `node-console.portaldot.dev` is a polkadot.js-apps UI, and by default it points at a *different*

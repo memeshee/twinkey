@@ -22,7 +22,9 @@ EVM JSON-RPC @ latest  ──►  eth_getCode / eth_call    ──►  what is t
 So the service never calls the EVM endpoint with a block tag other than `"latest"`. This is
 commented in `src/evm.rs` and `src/main.rs`.
 
-Both endpoints return **HTTP 403 without a `User-Agent`**; the shared `reqwest::Client` sets one.
+Both endpoints return **HTTP 403 when the `User-Agent` is the literal `Python-urllib/*` string** (a
+Cloudflare WAF rule). It is that specific value, not a missing header — `curl`, `node`, Go, empty and
+`python-requests` all pass. The shared `reqwest::Client` sets a UA, so the service is unaffected.
 
 ## Build
 

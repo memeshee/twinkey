@@ -8,6 +8,12 @@ standard EVM interface. No second wallet, no seed import, no bridging between tw
 > Live chain facts, including the ones this product depends on, are in
 > [`docs/VERIFIED-FACTS.md`](docs/VERIFIED-FACTS.md) — every one reproducible with a `curl`.
 
+![TwinKey app](docs/twinkey-app.png)
+
+The screenshot above is the deployed app: both faces of one account resolved from the chain, live
+contract state over `eth_call`, a real write, decoded `revive.ContractEmitted` events, and the Rust
+verifier's verdict for block 90995.
+
 ---
 
 ## The problem
