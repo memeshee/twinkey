@@ -72,4 +72,29 @@ Same account, both runtimes, one signature.
   magnitude below the limit used.
 - Storage deposits are real balance reservations on the *caller* (`revive:StorageDepositReserve`),
   so a contract write costs more than the fee suggests. Budget for it in any UI that shows costs.
-- The RPC is **not archival**; historical state queries fail. Read at head.
+- The **Substrate** RPC is a full archive: `api.at(blockHash)` returns real per-block state back to
+  block 1. The **EVM** RPC prunes state (~256 blocks) — `eth_call` and `eth_getBlockByNumber` fail
+  beyond that with `UnknownBlock: State already discarded`, while `eth_getLogs` still spans the full
+  chain (but silently omits logs emitted by native-path `revive.call`). So: take history from the
+  Substrate RPC and current state from the EVM RPC at `latest`. Never `eth_call` at a historical
+  block. Reproductions in [`VERIFIED-FACTS.md`](VERIFIED-FACTS.md).
+
+## 4. Where this runs, and the plan flip
+
+| Piece | Host | Detail |
+|---|---|---|
+| App | Vercel → <https://twinkey.vercel.app> | git-linked to `memeshee/twinkey` `main`; project **`rootDirectory` must be `app`** or the Git build cannot resolve `@/*` aliases |
+| Verifier | Render → <https://twinkey-verifier.onrender.com> | service `srv-dbb1lddg1s2s73duaeog`, rootDir `agent`, native Rust, `RUST_VERSION=1.90.0` |
+| Demo signer | Vercel env `PORTALDOT_SECRET_URI` | throwaway 5 tPOT account; the project key is never deployed |
+
+The verifier runs on Render's **free** plan, which sleeps after ~15 min idle. Two scheduled Hermes
+cron jobs manage the judged window — both are `no_agent` shell jobs that report their result:
+
+- `79d58f8162f0` — **2026-10-24 12:00 UTC** (check-in): flips the service to **Starter**. No cold
+  start, and it hands the workspace's 750 shared free hours back to the other two free services on
+  that account (`confidant-demo`, `fieldday`).
+- `184771508622` — **2026-11-14 00:00 UTC+7**: returns it to **free**.
+
+While it is on the free plan, job `9f31c3cc865d` pings `/health` every 10 minutes so a judge never
+waits out a cold start; it is silent unless the verifier is unhealthy. If you stop needing the demo,
+remove all three jobs before the free-hour pool matters again.
