@@ -14,7 +14,9 @@ The screenshot above is the deployed app: both faces of one account resolved fro
 contract state over `eth_call`, a real write, decoded `revive.ContractEmitted` events, and the Rust
 verifier's verdict for block 90995.
 
-**Live demo:** <https://twinkey-h2ldrrfze-memeshe-s-projects.vercel.app>
+**Live demo:** <https://twinkey.vercel.app>
+**Verifier:** <https://twinkey-verifier.onrender.com/health> (Rust, Render — free tier, so the first
+request after an idle spell takes ~30–60 s to cold start)
 
 The deployed instance runs the write path with a **dedicated throwaway demo account**
 (`5He7dvDWyMs7DAiAVBsfczFZPEKVa5tAQwLQjNTSq3beUAHZ` → `0xfd2d914e…62e7`), funded with 5 tPOT and

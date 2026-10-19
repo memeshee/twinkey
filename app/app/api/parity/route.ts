@@ -28,7 +28,7 @@ export async function GET(req: Request) {
   if (!target) return NextResponse.json({ error: "pass ?block= or ?tx=" }, { status: 400 });
 
   try {
-    const res = await fetch(target, { cache: "no-store", signal: AbortSignal.timeout(45_000) });
+    const res = await fetch(target, { cache: "no-store", signal: AbortSignal.timeout(55_000) });
     const body = await res.json().catch(() => ({ raw: "unparseable response" }));
     return NextResponse.json(
       { available: true, verifier: VERIFIER, status: res.status, ...body },
