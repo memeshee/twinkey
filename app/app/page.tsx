@@ -75,6 +75,22 @@ export default function Page() {
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
 
+  const [verdict, setVerdict] = useState<any>(null);
+  const [verifying, setVerifying] = useState(false);
+
+  const runVerify = useCallback(async (block: number, mode: "parity" | "report" = "parity") => {
+    setVerifying(true);
+    try {
+      const res = await fetch(`/api/parity?block=${block}&mode=${mode}`, { cache: "no-store" });
+      const json = await res.json();
+      setVerdict({ ...json, requestedBlock: block });
+    } catch (e: any) {
+      setVerdict({ available: false, error: String(e?.message ?? e), requestedBlock: block });
+    } finally {
+      setVerifying(false);
+    }
+  }, []);
+
   const loadState = useCallback(async (ss58?: string | null) => {
     try {
       const qs = ss58 ? `?ss58=${encodeURIComponent(ss58)}` : "";
@@ -158,6 +174,7 @@ export default function Page() {
     setWriteError(null);
     setWriteResult(null);
     const started = Date.now();
+    let wroteBlock: number | null = null;
     try {
       const { encodeFunctionData } = await import("viem");
       const { TWINKEY_PROBE_ABI, TWINKEY_PROBE_ADDRESS } = await import("@/lib/twinkey/abi");
@@ -186,6 +203,7 @@ export default function Page() {
           elapsedMs: Date.now() - started,
           path: "revive.call signed in your wallet",
         });
+        wroteBlock = Number(BigInt(receipt?.blockNumber ?? "0x0")) || null;
       } else {
         // ---- server path: the demo signer, for judges without an extension --------------------
         const res = await fetch("/api/demo-write", {
@@ -196,12 +214,14 @@ export default function Page() {
         const json = await res.json();
         if (json.error) throw new Error(json.error + (json.hint ? ` — ${json.hint}` : ""));
         setWriteResult(json);
+        wroteBlock = Number(BigInt(json.receipt?.blockNumber ?? "0x0")) || null;
       }
       // The write is done at this point; refreshing the page data must not keep the button
       // spinning, because a 300-block rescan takes several seconds.
       setWriting(false);
       await loadState(activeSs58);
       scan(300);
+      if (wroteBlock) runVerify(wroteBlock);
     } catch (e: any) {
       setWriteError(String(e?.message ?? e));
       setWriting(false);
@@ -473,6 +493,64 @@ decoded EVM log
               ))}
             </tbody>
           </table>
+        )}
+      </div>
+
+      {/* ---------------- independent verifier ---------------- */}
+      <div className="card" style={{ marginTop: 18 }}>
+        <h2>
+          Independent verdict <span className="badge">Rust verifier, separate process</span>
+        </h2>
+        <p className="sub">
+          A second implementation with its own RPC readers checks that the state the EVM layer reports
+          actually matches what was emitted on the Substrate side. If it is not running, this says so
+          rather than inventing a verdict.
+        </p>
+        <div className="row" style={{ marginBottom: 8 }}>
+          <button onClick={() => runVerify(90990, "report")} disabled={verifying}>
+            verify deploy block 90990
+          </button>
+          <button onClick={() => runVerify(90995)} disabled={verifying}>
+            verify first call 90995
+          </button>
+          {state && (
+            <button onClick={() => runVerify(state.chain.head)} disabled={verifying}>
+              verify head
+            </button>
+          )}
+          {verifying && <span className="spin" />}
+        </div>
+        {verdict && (
+          <pre className="out">
+            {verdict.available === false ? (
+              <>
+                <span className="err">{verdict.error}</span>
+                {`
+${verdict.hint ?? ""}
+detail: ${verdict.detail ?? ""}`}
+              </>
+            ) : (
+              <>
+                <span className={verdict.verdict === false ? "err" : "ok"}>
+                  {verdict.verdict === undefined
+                    ? `block ${verdict.requestedBlock} — report (${verdict.revive_event_count ?? 0} revive event(s))`
+                    : `verdict: ${verdict.verdict ? "PASS" : "FAIL"}`}
+                </span>
+                {verdict.checks
+                  ? "\n" + verdict.checks.map((c: any) => `  ${c.ok ? "ok  " : "FAIL"} ${c.name}: ${c.detail}`).join("\n")
+                  : ""}
+                {(verdict.summary ?? verdict.notes)
+                  ? "\n" + (Array.isArray(verdict.summary ?? verdict.notes)
+                      ? (verdict.summary ?? verdict.notes).join("\n")
+                      : verdict.summary ?? verdict.notes)
+                  : ""}
+                {verdict.revive_events
+                  ? `\nrevive events in block: ${verdict.revive_events.length}`
+                  : ""}
+                {verdict.policy ? `\npolicy: ${verdict.policy.history}` : ""}
+              </>
+            )}
+          </pre>
         )}
       </div>
 
