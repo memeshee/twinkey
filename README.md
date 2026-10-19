@@ -107,20 +107,41 @@ docs/       VERIFIED-FACTS.md (chain facts with the commands that produced them)
 
 ## Running it
 
-> Filled in as the build lands (see `docs/BUILD-LOG.md` for exact commands and outputs used so far).
+```bash
+# 1. the app (Next.js) — provider shim + console + decoded EVM event feed
+cd app
+npm install
+npm run dev                       # http://localhost:3000
+# optional: enable the in-app demo write with a testnet key file
+#   PORTALDOT_KEY=~/.hermes/keys/portaldot-testnet.json npm run dev
+
+# 2. the end-to-end proof: drives the provider like viem would and prints a verdict
+npx tsx scripts/e2e-provider.ts 2077
+
+# 3. the Rust verifier (independent of the browser)
+cd ../agent
+cargo run --release               # http://localhost:8088/verify/block/90990
+```
+
+Exact commands and their output are in [`docs/BUILD-LOG.md`](docs/BUILD-LOG.md).
 
 ## Verification — what is real, what is not
 
 | Claim | State |
 |---|---|
 | Portaldot V3 testnet reachable, chain id, decimals, address mapping | **real, verified by `curl`** — `docs/VERIFIED-FACTS.md` |
-| A registered testnet wallet is funded | **real** — mapped `H160` held 499.9 tPOT at 2026-10-18T23:30Z |
+| A registered testnet wallet is funded | **real** — mapped `H160` holds ~401.7 tPOT as of 2026-10-19 |
 | Native `AccountId32` → `H160` mapping via runtime API | **real** — `ReviveApi_address` returns `0xe70f…d934` for `5DM…Bko9C7` |
-| Contract deployed on the testnet by an ss58 key | **real** — `0x19d5aa109cbf0d4e0a126f1438ea73b619cb7725`, tx `0x1750677…cfe02f` |
-| Contract called by the same ss58 key, state read back over EVM RPC | **real** — block `0xfd7a389…ee8211`, `read()` → `(42, 0xe70f…d934, 1)` |
-| Dry-run → exact `weight_limit` / `storage_deposit` → execute | **real** — block `0x53f6d82…e3f485`, `weightRequired {506041677, 31937}` |
+| Contract deployed on the testnet by an ss58 key | **real** — `0x19d5aa109cbf0d4e0a126f1438ea73b619cb7725`, deploy block 90990 |
+| Contract called by the same ss58 key, state read back over EVM RPC | **real** — call block 90995; later calls at 102680, 102716, 102852 |
+| **An EIP-1193 `eth_sendTransaction` executes on chain via an ss58 signature** | **real** — `app/scripts/e2e-provider.ts` 12/12, tx `0x6aac8a66…34f8` |
+| **`eth_getTransactionReceipt` returns a receipt with a decoded EVM log** | **real** — `ValueSet(caller=0xe70f…d934, value=2077, callCount=4)` |
+| **`eth_estimateGas` returns the real cost, not the EVM endpoint's inflated value** | **real** — 50,604,168 vs 417,905,553,159 (8,258×) |
+| Dry-run → exact `weight_limit` / `storage_deposit` → execute | **real** — `weightRequired {506041677, 31937}` on an earlier call |
 | External EOA can write over the EVM JSON-RPC | **no** — `Invalid Transaction` for every tx type; see `docs/FINDINGS.md`. Reads work. |
-| Parity verdict for a call | *in progress* — no claim until the verifier prints it |
+| `eth_getLogs` returns logs from native-path calls | **no** — returns `[]` for our own contract across the full range. The app scans Substrate events and merges receipts instead. |
+| Rust verifier verdict for a call | see `agent/` — endpoints and their real output are in the agent README |
+
 
 
 No mocked behaviour is presented as real here. Anything simulated is labelled as such in the app

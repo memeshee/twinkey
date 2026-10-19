@@ -1,0 +1,27 @@
+{
+  "name": "twinkey",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TwinKey — one SS58 key, both Portaldot runtimes. Next.js app + EIP-1193 provider shim.",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "e2e": "tsx scripts/e2e-provider.ts"
+  },
+  "dependencies": {
+    "@polkadot/api": "^16.5.6",
+    "@polkadot/util-crypto": "^14.0.1",
+    "next": "^15.5.7",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "viem": "^2.38.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "tsx": "^4.20.3",
+    "typescript": "^5.7.2"
+  }
+}

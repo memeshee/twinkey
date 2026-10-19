@@ -1,0 +1,25 @@
+[package]
+name = "twinkey-verifier"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+description = "Independent HTTP verifier for TwinKey parity receipts on Portaldot V3"
+publish = false
+
+[dependencies]
+axum = "=0.8.9"
+tokio = { version = "=1.53.3", features = ["rt-multi-thread", "macros", "net", "signal"] }
+subxt = "=0.51.1"
+reqwest = { version = "=0.13.5", features = ["json"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+hex = "=0.4.3"
+blake2 = "=0.10.6"
+
+[[bin]]
+name = "twinkey-verifier"
+path = "src/main.rs"
+
+[[bin]]
+name = "probe"
+path = "src/bin/probe.rs"

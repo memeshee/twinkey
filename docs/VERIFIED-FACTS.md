@@ -44,7 +44,82 @@ state_call("ReviveApi_address", 0x38eb74935dffbc867c2fbeeac7170156b76f17c6aa1c38
 | Peers | 2 |
 | Total issuance | 20,043,388 POT (`Balances.TotalIssuance`, raw `2004338842628218665106`) |
 | Transactions in the 40 blocks before the snapshot | **0** — the chain has processed no user traffic |
-| RPC archival? | **No** — block-0 EVM state queries fail; do not build history-dependent logic on it |
+| Substrate RPC archival? | **Yes** — see below. This row previously said "No"; that was wrong and is corrected with evidence. |
+| EVM RPC archival? | **No** — `eth_call` / `eth_getBlockByNumber` at a historical block fail with `UnknownBlock: State already discarded` beyond roughly 256 blocks. `eth_getLogs` does span the full range. |
+
+## State availability — the two RPCs are not the same node
+
+This is the most expensive thing to get wrong on this chain, so it is stated explicitly with the
+commands that prove it.
+
+**The Substrate RPC (`test-node-v3.portaldot.dev`) is a full archive node.** Historical state is
+readable at any depth, including genesis:
+
+```
+# reads real per-block state, and the values differ per block — that is the proof
+polkadot-js  api.at(hash).query.system.account("5DM…Bko9C7")
+  block  50000 → free 0
+  block  90000 → free 50000000000000000
+  block  90990 → free 43329708751943027   (the deploy block)
+  block  90995 → free 42175407445037377   (the call block)
+
+Balances.TotalIssuance
+  block  50000 → 2002666199190143444525
+  block 100000 → 2004666338374903816661
+
+Staking.ActiveEra
+  block  50000 → { index: 13 }
+  block 100000 → { index: 27 }
+```
+
+**The EVM RPC (`test-evm-rpc-v3.portaldot.dev`) is a separate endpoint and is not archival for
+state.** `eth_call` at block `head-256` succeeds; at `head-300` it fails:
+
+```
+{"code":-32000,"message":"Cannot construct OnlineClientAtBlock: failed to obtain spec version …
+  UnknownBlock: State already discarded for 0xfd7a3898… (4003)"}
+```
+
+`eth_getLogs` is the exception — it answers across the whole range.
+
+**Consequence for anything built here:** read *history* from the Substrate event stream, read
+*current state* from the EVM RPC at `latest`, and never call `eth_call` at an old block number.
+This is why TwinKey's verifier and its app both scan Substrate events.
+
+## The EVM log index is incomplete for native-path calls
+
+`eth_getLogs` on the EVM endpoint does not return logs emitted by a native-origin `revive.call`.
+Verified against our own contract, which emitted at blocks 90995 and 102680:
+
+```
+eth_getLogs {address: 0x19d5aa109cbf0d4e0a126f1438ea73b619cb7725, fromBlock: 0x0, toBlock: latest}
+  → []
+eth_getLogs {fromBlock: 0x0, toBlock: latest}   # whole chain
+  → 23 logs, none of them ours
+```
+
+The same logs are present in the Substrate event stream at those blocks. So on this chain an EVM
+log written by a native-path call is invisible to every consumer of `eth_getLogs` — including
+indexers. TwinKey's provider merges its own submitted receipts into `eth_getLogs` results and
+serves the decoded log from there.
+
+## Test funds sent to an EOA are stranded — evidence
+
+FINDINGS.md §1 describes funding a test EOA (`0x7FCC…16f3`, 20 tPOT) and finding the EVM write path
+rejects every transaction. Re-checked 2026-10-19:
+
+```
+eth_getBalance(0x7FCC2Fc227f16220E3c0FAa63337551234de16f3) → 19.9 tPOT      # still there
+native account 5ExGbSUEjj29Mvtt7BK5o3xZExUbbJsn2Xs2oqA8rmiL2ig8
+  free  → 2000000000000000 (20.000000 tPOT)
+  nonce → 0
+revive.originalAccount(0x7FCC…) → (empty)
+```
+
+The balance sits in a native account whose key nobody holds (it is derived from the H160), while the
+H160 can only spend through the EVM write path, which is broken. `revive.originalAccount` being
+empty is the on-chain statement that no mapping lets the native side act for that address. The funds
+are not recoverable by either side today. Keep test funds in a native account you hold the key to.
 
 ## Explorer reality
 
