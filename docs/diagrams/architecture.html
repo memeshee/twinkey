@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TwinKey architecture</title>
+<style>
+  :root {
+    --paper: #0b0d10;
+    --surface: #12161b;
+    --surface-2: #171c22;
+    --line: #232b34;
+    --ink: #e8edf2;
+    --muted: #8b98a8;
+    --soft: #5b6673;
+    --accent: #4ade80;
+    --accent-dim: #1f7a44;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); }
+  .frame { max-width: 1000px; margin: 0 auto; padding: 28px 0 40px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--muted); padding: 0 2px 8px;
+  }
+  .frame h1 {
+    font-family: var(--sans); font-weight: 600; font-size: 25px;
+    letter-spacing: -0.015em; margin: 0 0 20px; padding: 0 2px; color: var(--ink);
+  }
+  .diagram-container { overflow-x: auto; }
+  svg { display: block; min-width: 1000px; }
+  /* Diagram rules (carried into the SVG on export) */
+  .zone-label { font-family: var(--mono); font-size: 7.5px; letter-spacing: .16em; fill: rgba(232,237,242,0.38); }
+  .tag { font-family: var(--mono); font-size: 7.5px; letter-spacing: .12em; fill: var(--soft); }
+  .node-name { font-family: var(--sans); font-weight: 600; font-size: 13px; fill: var(--ink); }
+  .node-name.focal { fill: var(--accent); }
+  .node-sub { font-family: var(--mono); font-size: 9px; fill: var(--muted); }
+  .arrow-label { font-family: var(--mono); font-size: 8px; letter-spacing: .1em; fill: var(--muted); }
+  .legend-text { font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; fill: var(--muted); }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="eyebrow">TwinKey · Portaldot V3 testnet</div>
+  <h1>One SS58 key, two runtimes, one contract</h1>
+  <div class="diagram-container">
+    <svg viewBox="0 0 1000 900" width="1000" role="img" aria-labelledby="architecture-title architecture-desc" xmlns="http://www.w3.org/2000/svg">
+      <title id="architecture-title">TwinKey reads and writes for one SS58 key across two runtimes</title>
+      <desc id="architecture-desc">An EIP-1193 dApp talks to the TwinKey provider, which signs with one SS58 key: reads go to the EVM RPC at latest, writes go to the Substrate RPC as revive.call extrinsics, and both reach the pallet-revive contract. A separate Rust verifier reads the same two endpoints to cross-check history against current state.</desc>
+
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b98a8"/>
+        </marker>
+        <marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#4ade80"/>
+        </marker>
+        <marker id="arrow-dash" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#5b6673"/>
+        </marker>
+      </defs>
+
+      <!-- zones (behind everything) -->
+      <rect x="48" y="96" width="608" height="296" rx="8" fill="rgba(232,237,242,0.020)" stroke="rgba(232,237,242,0.075)" stroke-width="0.8"/>
+      <rect x="112" y="102" width="86" height="12" rx="2" fill="#0b0d10"/>
+      <text class="zone-label" x="155" y="111" text-anchor="middle">SIGNER SIDE</text>
+
+      <rect x="104" y="436" width="792" height="284" rx="8" fill="rgba(232,237,242,0.020)" stroke="rgba(232,237,242,0.075)" stroke-width="0.8"/>
+      <rect x="168" y="442" width="126" height="12" rx="2" fill="#0b0d10"/>
+      <text class="zone-label" x="231" y="451" text-anchor="middle">PORTALDOT TESTNET</text>
+
+      <!-- arrows: drawn before nodes -->
+      <!-- A1 dApp -> provider -->
+      <line x1="500" y1="184" x2="500" y2="202" stroke="#8b98a8" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="508" y="190" width="52" height="12" rx="2" fill="#0b0d10"/>
+      <text class="arrow-label" x="534" y="199" text-anchor="middle">ETH_CALL</text>
+
+      <!-- A2 key -> provider -->
+      <line x1="288" y1="252" x2="374" y2="252" stroke="#8b98a8" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="312" y="234" width="44" height="12" rx="2" fill="#0b0d10"/>
+      <text class="arrow-label" x="334" y="243" text-anchor="middle">SIGNS</text>
+
+      <!-- A3 provider -> EVM RPC (read path) -->
+      <path d="M 440,296 V 416 Q 440,424 432,424 H 320 Q 312,424 312,432 V 458" fill="none" stroke="#8b98a8" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="390" y="346" width="44" height="12" rx="2" fill="#0b0d10"/>
+      <text class="arrow-label" x="412" y="355" text-anchor="middle">READS</text>
+
+      <!-- A4 provider -> Substrate RPC (write path, headline) -->
+      <path d="M 560,296 V 416 Q 560,424 568,424 H 648 Q 656,424 656,432 V 458" fill="none" stroke="#4ade80" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <rect x="566" y="346" width="48" height="12" rx="2" fill="#0b0d10"/>
+      <text class="arrow-label" x="590" y="355" text-anchor="middle">WRITES</text>
+
+      <!-- A5 EVM RPC -> contract -->
+      <path d="M 268,536 V 568 Q 268,576 276,576 H 448 Q 456,576 456,584 V 586" fill="none" stroke="#8b98a8" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="334" y="558" width="44" height="12" rx="2" fill="#0b0d10"/>
+      <text class="arrow-label" x="356" y="567" text-anchor="middle">STATE</text>
+
+      <!-- A6 Substrate RPC -> contract (headline) -->
+      <path d="M 700,536 V 568 Q 700,576 692,576 H 552 Q 544,576 544,584 V 586" fill="none" stroke="#4ade80" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <rect x="586" y="558" width="52" height="12" rx="2" fill="#0b0d10"/>
+      <text class="arrow-label" x="612" y="567" text-anchor="middle">EXECUTES</text>
+
+      <!-- A7 verifier -> EVM RPC (dashed) -->
+      <path d="M 400,804 H 224 Q 216,804 216,796 V 542" fill="none" stroke="#5b6673" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow-dash)"/>
+      <rect x="274" y="786" width="52" height="12" rx="2" fill="#0b0d10"/>
+      <text class="arrow-label" x="300" y="795" text-anchor="middle">CURRENT</text>
+
+      <!-- A8 verifier -> Substrate RPC (dashed) -->
+      <path d="M 600,804 H 752 Q 760,804 760,796 V 542" fill="none" stroke="#5b6673" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow-dash)"/>
+      <rect x="676" y="786" width="48" height="12" rx="2" fill="#0b0d10"/>
+      <text class="arrow-label" x="700" y="795" text-anchor="middle">HISTORY</text>
+
+      <!-- N1 dApp -->
+      <rect x="400" y="120" width="200" height="64" rx="6" fill="#12161b" stroke="#2b3540" stroke-width="1"/>
+      <text class="tag" x="416" y="140">CONSUMER</text>
+      <text class="node-name" x="416" y="160">EIP-1193 dApp</text>
+      <text class="node-sub" x="416" y="174">viem · ethers · wagmi</text>
+
+      <!-- N2 provider (focal) -->
+      <rect x="380" y="208" width="240" height="88" rx="6" fill="#121a16" stroke="#4ade80" stroke-width="1.4"/>
+      <text class="tag" x="396" y="230">SHIM</text>
+      <text class="node-name focal" x="396" y="252">TwinKey provider</text>
+      <text class="node-sub" x="396" y="268">eth_* over an SS58 signer</text>
+      <text class="node-sub" x="396" y="282">gas from ReviveApi_call</text>
+
+      <!-- N3 key -->
+      <rect x="88" y="220" width="200" height="64" rx="6" fill="#12161b" stroke="#2b3540" stroke-width="1"/>
+      <text class="tag" x="104" y="240">SIGNER</text>
+      <text class="node-name" x="104" y="260">SS58 key</text>
+      <text class="node-sub" x="104" y="274">sr25519 · one account</text>
+
+      <!-- N4 EVM RPC -->
+      <rect x="152" y="464" width="232" height="72" rx="6" fill="#12161b" stroke="#232b34" stroke-width="1"/>
+      <text class="tag" x="168" y="486">READ RPC</text>
+      <text class="node-name" x="168" y="506">EVM RPC</text>
+      <text class="node-sub" x="168" y="522">test-evm-rpc-v3 · latest only</text>
+
+      <!-- N5 Substrate RPC -->
+      <rect x="584" y="464" width="232" height="72" rx="6" fill="#12161b" stroke="#232b34" stroke-width="1"/>
+      <text class="tag" x="600" y="486">HISTORY RPC</text>
+      <text class="node-name" x="600" y="506">Substrate RPC</text>
+      <text class="node-sub" x="600" y="522">test-node-v3 · full archive</text>
+
+      <!-- N6 contract -->
+      <rect x="400" y="592" width="200" height="96" rx="6" fill="#171c22" stroke="#1f7a44" stroke-width="1.2"/>
+      <text class="tag" x="416" y="614">CONTRACT</text>
+      <text class="node-name" x="416" y="636">pallet-revive</text>
+      <text class="node-sub" x="416" y="652">TwinKeyProbe</text>
+      <text class="node-sub" x="416" y="666">0x19d5aa…7725</text>
+
+      <!-- N7 verifier -->
+      <rect x="400" y="768" width="200" height="72" rx="6" fill="#0f1216" stroke="#2b3540" stroke-width="1" stroke-dasharray="4,3"/>
+      <text class="tag" x="416" y="790">SEPARATE PROCESS</text>
+      <text class="node-name" x="416" y="810">Rust verifier</text>
+      <text class="node-sub" x="416" y="826">subxt · own RPC readers</text>
+
+      <!-- legend strip -->
+      <line x1="104" y1="846" x2="896" y2="846" stroke="#232b34" stroke-width="0.8"/>
+      <line x1="104" y1="868" x2="128" y2="868" stroke="#4ade80" stroke-width="1.4"/>
+      <text class="legend-text" x="136" y="871">write path · revive.call</text>
+      <line x1="356" y1="868" x2="380" y2="868" stroke="#8b98a8" stroke-width="1.2"/>
+      <text class="legend-text" x="388" y="871">read path · eth_call at latest</text>
+      <line x1="636" y1="868" x2="660" y2="868" stroke="#5b6673" stroke-width="1" stroke-dasharray="4,3"/>
+      <text class="legend-text" x="668" y="871">independent verification</text>
+    </svg>
+  </div>
+</div>
+</body>
+</html>

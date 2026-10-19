@@ -56,6 +56,14 @@ has. TwinKey closes that gap.
 
 ## What TwinKey is
 
+![TwinKey architecture: one SS58 key driving two runtimes](docs/diagrams/architecture.png)
+
+One key, two endpoints: reads go to the EVM RPC at `latest`, writes go to the Substrate RPC as
+`revive.call` extrinsics signed by the SS58 key, and a separate Rust process checks that both sides
+agree. The editable source of that diagram is
+[`docs/diagrams/architecture.html`](docs/diagrams/architecture.html) — open it in a browser, no build
+step.
+
 1. **A signer bridge.** Connect the Substrate wallet you already have (Portaldot extension,
    polkadot.js extension, or any injected SS58 signer). TwinKey resolves your `H160` through the
    chain's own runtime API, shows both identities as one account, and submits contract calls as
