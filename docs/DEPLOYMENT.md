@@ -130,3 +130,12 @@ Two changes, both in `agent/src/chain.rs`:
 methods the node advertises to *this* instance, `chain_getBlockHash` for a probe block, and both
 shapes of `archive_v1_hashByHeight` — this node accepts a JSON **number** and rejects the spec's
 string form with `invalid type: string, expected u64`.
+
+### Pushing does not deploy
+
+The service says `autoDeploy: yes`, but its repo is attached as a plain public URL rather than
+through the GitHub App, so **a push starts no build**: commit `149df59` was the only deploy that
+ever ran, and the four commits after it sat undeployed behind a healthy `/health`. Use
+`tooling/deploy-verifier.sh` — it pushes if needed, triggers the build through the API, waits for
+`live`, then calls `/health`, `/verify/block/90990` and `/parity/90995` so a green result means the
+running build actually answers.
