@@ -15,8 +15,10 @@ contract state over `eth_call`, a real write, decoded `revive.ContractEmitted` e
 verifier's verdict for block 90995.
 
 **Live demo:** <https://twinkey.vercel.app>
-**Verifier:** <https://twinkey-verifier.onrender.com/health> (Rust, Render — free tier, so the first
-request after an idle spell takes ~30–60 s to cold start)
+**Verifier:** <https://twinkey-verifier.onrender.com/ready> (Rust, Render — free tier, so the first
+request after an idle spell takes ~30–60 s to cold start). `/ready` is the deep check (both upstream
+RPCs, head block); `/health` is liveness only and answers from memory, because Render kills the
+instance when its own probe takes more than 5 s
 
 The deployed instance runs the write path with a **dedicated throwaway demo account**
 (`5He7dvDWyMs7DAiAVBsfczFZPEKVa5tAQwLQjNTSq3beUAHZ` → `0xfd2d914e…62e7`), funded with 5 tPOT and

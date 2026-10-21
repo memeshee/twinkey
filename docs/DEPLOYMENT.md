@@ -139,3 +139,19 @@ ever ran, and the four commits after it sat undeployed behind a healthy `/health
 `tooling/deploy-verifier.sh` — it pushes if needed, triggers the build through the API, waits for
 `live`, then calls `/health`, `/verify/block/90990` and `/parity/90995` so a green result means the
 running build actually answers.
+
+### The health-check alert emails (2026-10-21)
+
+Render emailed about failed health checks because the instance kept being marked unhealthy:
+
+```
+server_failed  reason: {"unhealthy": "HTTP health check failed (timed out after 5 seconds)"}
+```
+
+Render's probe budget on `healthCheckPath` is **5 seconds**, and `/health` was making five
+sequential calls to two external RPC hosts; healthy it took ~1.2 s, so any upstream hiccup
+(or a cold TLS handshake) blew the budget, Render killed and restarted the instance, and each
+restart produced an email. `/health` is now I/O-free — it answers from process memory in about a
+millisecond — and the upstream checks moved to `/ready`, which queries both endpoints concurrently
+under a 6 s ceiling and returns a labeled 503 when one is down. The keep-warm job now pings
+`/health` (liveness) and `/ready` (deep) and stays silent unless one of them fails.

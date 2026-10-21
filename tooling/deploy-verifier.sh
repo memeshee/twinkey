@@ -60,6 +60,7 @@ done
 
 sleep 3
 echo "deploy-verifier: backend + endpoints"
-curl -s -m 120 "$BASE/health" | python3 -c 'import sys,json; d=json.load(sys.stdin); print("  /health      ok=%s backend=%s head=%s" % (d.get("ok"), d.get("subxt_backend"), d.get("head_block")))' || exit 1
+curl -s -m 120 "$BASE/health" | python3 -c 'import sys,json; d=json.load(sys.stdin); print("  /health      ok=%s backend=%s uptime=%ss" % (d.get("ok"), d.get("subxt_backend"), d.get("uptime_s")))' || exit 1
+curl -s -m 150 "$BASE/ready" | python3 -c 'import sys,json; d=json.load(sys.stdin); print("  /ready       ok=%s chain=%s head=%s evm=%s" % (d.get("ok"), d.get("chain"), d.get("head_block"), d.get("evm_block")))' || exit 1
 curl -s -m 150 "$BASE/verify/block/90990" | python3 -c 'import sys,json; d=json.load(sys.stdin); print("  /verify/block ok=%s events=%d %s" % (d.get("ok"), len(d.get("revive_events") or []), (d.get("error") or "")))' || exit 1
 curl -s -m 150 "$BASE/parity/90995" | python3 -c 'import sys,json; d=json.load(sys.stdin); print("  /parity/90995 verdict=%s checks=%s" % (d.get("verdict"), [(c["name"], c["ok"]) for c in d.get("checks") or []]))' || exit 1

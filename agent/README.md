@@ -55,7 +55,30 @@ Environment variables (all optional):
 
 ## Endpoints (GET only)
 
-### `GET /health`
+### `GET /health` — liveness, no I/O
+
+```json
+{
+  "ok": true,
+  "service": "twinkey-verifier",
+  "version": "0.1.0",
+  "uptime_s": 412,
+  "subxt_backend": "legacy/WS",
+  "substrate_methods": { "count": 135, "has_archive_v1": true, "has_chain_head_v1": true, "has_chain_get_block_hash": true },
+  "deep_check": "GET /ready — checks both upstream RPCs (may take 1–2 s)"
+}
+```
+
+Answered from process memory in microseconds. Render probes this path and kills the instance when it
+does not answer within **5 seconds** — an earlier version made five upstream RPC calls here, so a
+slow upstream (or just a slow TLS handshake) looked like a dead process and got the service
+restarted, with an alert email each time. Liveness must not depend on a third party's latency.
+
+### `GET /ready` — deep readiness
+
+The check that actually matters, for monitoring and for keeping a free instance awake: both
+upstream RPCs are queried **concurrently** with a 6 s ceiling, so a hung endpoint returns a labeled
+503 quickly instead of parking the connection.
 
 ```json
 {
@@ -63,12 +86,21 @@ Environment variables (all optional):
   "chain": "PortaldotV3 Test",
   "spec_name": "portaldot-v3",
   "spec_version": 3002,
-  "head_block": 102800,
-  "evm_block": 102800,
+  "head_block": 129384,
+  "evm_block": 129384,
   "signer_ss58": "5DMLUzwxrQsPwc9dsjz4WUVSy4qryn2xWhtvv4RDkjBko9C7",
+  "subxt_backend": "legacy/WS",
   "read_policy": "history: Substrate archive at block hash; current state: EVM eth_call/eth_getCode at 'latest' only"
 }
 ```
+
+### `GET /diagnostics` — why it works, on this host
+
+The methods the node advertises to *this instance*, `chain_getBlockHash` for a probe block, and
+`archive_v1_hashByHeight` in both param shapes (this node accepts a JSON number and rejects the
+spec's string form). This exists because the verifier once worked from a laptop and failed on
+Render for a reason that was invisible from the outside; see
+[`../docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md).
 
 ### `GET /verify/block/:number`
 

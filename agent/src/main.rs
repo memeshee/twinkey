@@ -39,6 +39,8 @@ struct AppState {
     signer_ss58: String,
     signer_pubkey: [u8; 32],
     tx_scan_blocks: u64,
+    /// For uptime in /health. Liveness must be answerable without any I/O.
+    started: std::time::Instant,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -95,36 +97,82 @@ fn blake2_256(bytes: &[u8]) -> [u8; 32] {
 // GET /health
 // ---------------------------------------------------------------------------
 
-async fn health(State(st): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
-    let chain_name = st.chain.chain_name().await?;
-    let runtime = st.chain.runtime_version().await?;
-    let header = st.chain.header().await?;
-    let head_hash = header
-        .get("parentHash")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
-    let head_block = st.chain.head_number().await?;
-    let evm_block = st.evm.block_number().await?;
-
-    Ok(Json(json!({
+/// `GET /health` — liveness only, answered from process memory.
+///
+/// This is the path Render probes, and Render kills the instance when it does
+/// not answer within **5 seconds** (`server_failed … "HTTP health check failed
+/// (timed out after 5 seconds)"` in the service events, which is also what the
+/// alert emails were about). The previous version made five sequential calls to
+/// two external RPC hosts here, so every upstream hiccup — or just a slow TLS
+/// handshake — looked like a dead process and got the instance restarted mid-run.
+/// Liveness must not depend on a third party's latency: nothing here does I/O,
+/// so it answers in microseconds. The upstreams are checked in `/ready`.
+async fn health(State(st): State<Arc<AppState>>) -> Json<Value> {
+    Json(json!({
         "ok": true,
         "service": "twinkey-verifier",
-        "chain": chain_name,
-        "spec_name": runtime.get("specName").cloned().unwrap_or(Value::Null),
-        "spec_version": runtime.get("specVersion").cloned().unwrap_or(Value::Null),
-        "head_block": head_block,
-        "head_parent_hash": head_hash,
-        "evm_block": evm_block,
-        "signer_ss58": st.signer_ss58,
-        "substrate_rpc": st.chain.http_url,
-        "substrate_ws": st.chain.ws_url,
+        "version": env!("CARGO_PKG_VERSION"),
+        "uptime_s": st.started.elapsed().as_secs(),
         "subxt_backend": st.chain.backend,
-        "subxt_backend_error": st.chain.backend_error,
         "substrate_methods": st.chain.methods,
-        "evm_rpc": st.evm.url,
-        "read_policy": "history: Substrate archive at block hash; current state: EVM eth_call/eth_getCode at 'latest' only",
-    })))
+        "deep_check": "GET /ready — checks both upstream RPCs (may take 1–2 s)",
+    }))
+}
+
+/// `GET /ready` — deep readiness: is the whole read path working right now?
+///
+/// Everything `/health` used to do, with the two endpoints queried concurrently
+/// and a 6 s ceiling, so a hung upstream returns a labeled 503 quickly instead
+/// of parking the connection for the 30 s client timeout. Use this (not
+/// `/health`) for monitoring and for keeping a free instance awake.
+async fn ready(State(st): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
+    let check = async {
+        let (chain_name, runtime, header, evm_block) =
+            tokio::join!(st.chain.chain_name(), st.chain.runtime_version(), st.chain.header(), st.evm.block_number());
+        let chain_name = chain_name?;
+        let runtime = runtime?;
+        let header = header?;
+        let evm_block = evm_block?;
+        let head_block = header
+            .get("number")
+            .and_then(Value::as_str)
+            .and_then(chain::parse_hex_u64);
+        let head_hash = header
+            .get("parentHash")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+
+        Ok::<Value, ApiError>(json!({
+            "ok": true,
+            "service": "twinkey-verifier",
+            "version": env!("CARGO_PKG_VERSION"),
+            "uptime_s": st.started.elapsed().as_secs(),
+            "chain": chain_name,
+            "spec_name": runtime.get("specName").cloned().unwrap_or(Value::Null),
+            "spec_version": runtime.get("specVersion").cloned().unwrap_or(Value::Null),
+            "head_block": head_block,
+            "head_parent_hash": head_hash,
+            "evm_block": evm_block,
+            "signer_ss58": st.signer_ss58,
+            "substrate_rpc": st.chain.http_url,
+            "substrate_ws": st.chain.ws_url,
+            "subxt_backend": st.chain.backend,
+            "subxt_backend_error": st.chain.backend_error,
+            "substrate_methods": st.chain.methods,
+            "evm_rpc": st.evm.url,
+            "read_policy": "history: Substrate archive at block hash; current state: EVM eth_call/eth_getCode at 'latest' only",
+        }))
+    };
+
+    match tokio::time::timeout(Duration::from_secs(6), check).await {
+        Ok(Ok(v)) => Ok(Json(v)),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err(ApiError::upstream(
+            "upstream",
+            "deep readiness check did not finish within 6s (substrate and/or EVM RPC is slow)",
+        )),
+    }
 }
 
 /// `GET /diagnostics` — why the verifier works or does not work *on this host*.
@@ -630,6 +678,7 @@ async fn index() -> impl IntoResponse {
         "service": "twinkey-verifier",
         "endpoints": [
             "GET /health",
+            "GET /ready",
             "GET /diagnostics",
             "GET /verify/block/:number",
             "GET /verify/tx/:hash",
@@ -691,11 +740,13 @@ async fn main() {
         signer_ss58: signer_ss58.clone(),
         signer_pubkey,
         tx_scan_blocks,
+        started: std::time::Instant::now(),
     });
 
     let app = Router::new()
         .route("/", get(index))
         .route("/health", get(health))
+        .route("/ready", get(ready))
         .route("/diagnostics", get(diagnostics))
         .route("/verify/block/{number}", get(verify_block))
         .route("/verify/tx/{hash}", get(verify_tx))
