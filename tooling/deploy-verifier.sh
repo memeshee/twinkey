@@ -37,10 +37,10 @@ echo "deploy-verifier: triggering a build of $(git log --oneline -1)"
 code=$(curl -sS -m 60 -o /dev/null -w '%{http_code}' -X POST \
   -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
   -d '{"clearCache":"do_not_clear"}' "$API/deploys")
-if [ "$code" != "202" ]; then
-  echo "deploy-verifier: deploy trigger FAILED (HTTP $code)"
-  exit 1
-fi
+case "$code" in
+  200|201|202) : ;;
+  *) echo "deploy-verifier: deploy trigger FAILED (HTTP $code)"; exit 1 ;;
+esac
 
 # Poll the newest deploy until it reaches a terminal state. Free-tier Rust builds
 # take a couple of minutes; give it 20 before giving up.
