@@ -98,3 +98,35 @@ cron jobs manage the judged window — both are `no_agent` shell jobs that repor
 While it is on the free plan, job `9f31c3cc865d` pings `/health` every 10 minutes so a judge never
 waits out a cold start; it is silent unless the verifier is unhealthy. If you stop needing the demo,
 remove all three jobs before the free-hour pool matters again.
+
+### The Render-only failure (2026-10-21), and what removed it
+
+`/verify/block/:n` and `/parity/:n` answered 503 on Render while the *same binary* served the same
+blocks from a laptop:
+
+```
+at_block(90990): Cannot construct OnlineClientAtBlock: failed to get block hash from node for
+block 90990: Custom backend error: The ChainHead V1 RPCs do not support obtaining a block hash
+from a number.
+```
+
+subxt's default `CombinedBackend` picks the **chainHead** backend as soon as the node lists
+`chainHead_v1_*`, and chainHead's `block_number_to_hash` is a hard error — not a fallback. The
+choice is made from the method list the node returns *to that host*, so it is not a property of
+the source: the archive backend that normally answers the lookup was not usable from that
+instance. `/health` was green throughout, because every check it made used either plain
+`reqwest` JSON-RPC or `at_latest`, and neither goes near that code path.
+
+Two changes, both in `agent/src/chain.rs`:
+
+- the legacy backend is **pinned** (`LegacyBackend` over wss) instead of autodetected, and the
+  choice is reported as `subxt_backend` in `/health`;
+- `revive_events` no longer asks subxt to map a number to a hash at all — it resolves
+  `chain_getBlockHash(height)` over plain JSON-RPC (the transport already proven to work from that
+  host) and hands subxt the hash. `chain_getBlockHash` carries no backend choice, so this is the
+  same call everywhere.
+
+`GET /diagnostics` makes the next occurrence debuggable instead of mysterious: it reports the
+methods the node advertises to *this* instance, `chain_getBlockHash` for a probe block, and both
+shapes of `archive_v1_hashByHeight` — this node accepts a JSON **number** and rejects the spec's
+string form with `invalid type: string, expected u64`.

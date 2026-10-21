@@ -5,16 +5,60 @@
 //! API), `state_call` for the runtime address mapping. Nothing historical is
 //! ever asked of the EVM endpoint.
 
+use std::sync::Arc;
+
 use serde::Serialize;
 use serde_json::{json, Value};
-use subxt::{OnlineClient, PolkadotConfig};
+use subxt::{
+    backend::LegacyBackend,
+    rpcs::RpcClient,
+    utils::H256,
+    OnlineClient, PolkadotConfig,
+};
 
 use crate::error::{ApiError, ApiResult};
+
+/// What this host is told the node can do, captured once at startup.
+///
+/// subxt's default (`CombinedBackend`) chooses the chainHead backend as soon as
+/// the node lists `chainHead_v1_*` — and chainHead cannot turn a block *number*
+/// into a hash. That choice is made from the method list the node returns to
+/// *this* machine, so it is not a property of the source code: a hosted egress
+/// can be handed a different list than a laptop, which is exactly how the
+/// verifier worked locally and failed on Render with
+/// "The ChainHead V1 RPCs do not support obtaining a block hash from a number".
+/// Recorded here so `/health` can show it instead of making us guess.
+#[derive(Debug, Clone, Serialize)]
+pub struct RpcMethods {
+    pub count: usize,
+    pub has_archive_v1: bool,
+    pub has_chain_head_v1: bool,
+    pub has_chain_get_block_hash: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl Default for RpcMethods {
+    fn default() -> Self {
+        Self {
+            count: 0,
+            has_archive_v1: false,
+            has_chain_head_v1: false,
+            has_chain_get_block_hash: false,
+            error: None,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct Chain {
     pub http_url: String,
     pub ws_url: String,
+    /// Which subxt backend/transport is actually in use ("legacy/HTTP", ...).
+    pub backend: String,
+    /// Why the preferred (legacy/HTTP) transport was not used, if it was not.
+    pub backend_error: Option<String>,
+    pub methods: RpcMethods,
     http: reqwest::Client,
     client: OnlineClient<PolkadotConfig>,
 }
@@ -47,10 +91,28 @@ pub struct ReviveEvent {
 impl Chain {
     pub async fn connect(http_url: String, http: reqwest::Client) -> Result<Self, String> {
         let ws_url = to_ws(&http_url);
-        let client = OnlineClient::<PolkadotConfig>::from_insecure_url(&ws_url)
-            .await
-            .map_err(|e| format!("cannot connect to Substrate RPC {ws_url}: {e}"))?;
-        Ok(Self { http_url, ws_url, http, client })
+        let methods = probe_methods(&http_url, &http).await;
+
+        // Pin the backend instead of letting subxt autodetect it. subxt's default
+        // (CombinedBackend) picks chainHead whenever the node lists
+        // chainHead_v1_*, and chainHead answers `block_number_to_hash` with an
+        // error rather than falling back — so on a host where the archive
+        // backend is unavailable every historical read dies. The legacy backend
+        // needs nothing but plain JSON-RPC and is identical on every host; the
+        // combined one is kept as a fallback only, and `revive_events` never asks
+        // either of them to map a number to a hash.
+        let (client, backend, backend_error) = match build_legacy(&ws_url).await {
+            Ok(c) => (c, "legacy/WS".to_string(), None),
+            Err(e1) => match OnlineClient::<PolkadotConfig>::from_insecure_url(&ws_url).await {
+                Ok(c) => (c, "combined/WS (fallback)".to_string(), Some(e1)),
+                Err(e2) => {
+                    return Err(format!(
+                        "cannot connect to Substrate RPC {ws_url}: legacy: {e1}; combined: {e2}"
+                    ))
+                }
+            },
+        };
+        Ok(Self { http_url, ws_url, backend, backend_error, methods, http, client })
     }
 
     /// Raw JSON-RPC over HTTP. Used for everything except event decoding, where
@@ -148,11 +210,41 @@ impl Chain {
     /// Fetch every `Revive` event at `number` by reading System.Events at that
     /// block hash. Errors (missing block, RPC failure) bubble up as ApiError.
     pub async fn revive_events(&self, number: u64) -> ApiResult<(String, Vec<ReviveEvent>)> {
+        // Resolve number -> hash ourselves over plain JSON-RPC and hand subxt the
+        // HASH. Only the number->hash lookup is backend-dependent: subxt's
+        // chainHead backend refuses it outright ("The ChainHead V1 RPCs do not
+        // support obtaining a block hash from a number"), which is what broke
+        // /verify/block and /parity on Render while the same binary worked on a
+        // laptop. `chain_getBlockHash` is a plain JSON-RPC call with no backend
+        // choice attached, so this is deterministic everywhere.
+        let hash_hex = self.block_hash(number).await?.ok_or_else(|| {
+            ApiError::not_found(
+                "block_not_found",
+                format!("no block at height {number}: height is out of range on this chain"),
+            )
+        })?;
+        let hash_bytes = hex::decode(hash_hex.trim_start_matches("0x")).map_err(|e| {
+            ApiError::upstream(
+                "substrate",
+                format!("chain_getBlockHash({number}) returned non-hex '{hash_hex}': {e}"),
+            )
+        })?;
+        if hash_bytes.len() != 32 {
+            return Err(ApiError::upstream(
+                "substrate",
+                format!(
+                    "chain_getBlockHash({number}) returned {} bytes, expected 32",
+                    hash_bytes.len()
+                ),
+            ));
+        }
+        let want = H256::from_slice(&hash_bytes);
+
         let at = self
             .client
-            .at_block(number)
+            .at_block(want)
             .await
-            .map_err(|e| ApiError::upstream("substrate", format!("at_block({number}): {e}")))?;
+            .map_err(|e| ApiError::upstream("substrate", format!("at_block({hash_hex}): {e}")))?;
         let block_hash = format!("0x{}", hex::encode(at.block_ref().hash().as_bytes()));
 
         let events = at
@@ -339,6 +431,66 @@ impl<'a> Cursor<'a> {
 
 pub fn parse_hex_u64(s: &str) -> Option<u64> {
     u64::from_str_radix(s.trim_start_matches("0x"), 16).ok()
+}
+
+/// Ask the node which RPC methods it exposes *to this host*. Best-effort: a
+/// failure is recorded, never fatal, because the service does not depend on any
+/// of these answers.
+async fn probe_methods(http_url: &str, http: &reqwest::Client) -> RpcMethods {
+    let body = json!({ "jsonrpc": "2.0", "id": 1, "method": "rpc_methods", "params": [] });
+    let resp = match http.post(http_url).json(&body).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            return RpcMethods { error: Some(format!("rpc_methods: {e}")), ..Default::default() }
+        }
+    };
+    let text = match resp.text().await {
+        Ok(t) => t,
+        Err(e) => {
+            return RpcMethods { error: Some(format!("rpc_methods body: {e}")), ..Default::default() }
+        }
+    };
+    let parsed: Value = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(e) => {
+            return RpcMethods {
+                error: Some(format!("rpc_methods: invalid JSON: {e}: {}", truncate(&text, 200))),
+                ..Default::default()
+            }
+        }
+    };
+    if let Some(err) = parsed.get("error") {
+        return RpcMethods { error: Some(format!("rpc_methods: {err}")), ..Default::default() };
+    }
+    let methods: Vec<String> = parsed
+        .get("result")
+        .and_then(|r| r.get("methods"))
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+        .unwrap_or_default();
+    RpcMethods {
+        count: methods.len(),
+        has_archive_v1: methods.iter().any(|m| m.starts_with("archive_v1_")),
+        has_chain_head_v1: methods.iter().any(|m| m.starts_with("chainHead_v1_")),
+        has_chain_get_block_hash: methods.iter().any(|m| m == "chain_getBlockHash"),
+        error: None,
+    }
+}
+
+/// subxt with the legacy backend pinned, so the number->hash / storage / header
+/// calls are the same on every host and no backend autodetection sits between us
+/// and the node. The transport has to be ws/wss: subxt 0.51's RPC client rejects
+/// an `https://` URL outright ("Invalid URL: `https` not supported, expects 'ws'
+/// or 'wss'"), so the JSON-RPC-over-WS upgrade is unavoidable — everything else
+/// still goes over plain HTTP via `reqwest`.
+async fn build_legacy(url: &str) -> Result<OnlineClient<PolkadotConfig>, String> {
+    let rpc = RpcClient::from_insecure_url(url)
+        .await
+        .map_err(|e| format!("subxt rpc client over {url}: {e}"))?;
+    let backend = LegacyBackend::builder().build(rpc);
+    OnlineClient::<PolkadotConfig>::from_backend(Arc::new(backend))
+        .await
+        .map_err(|e| format!("subxt legacy backend over {url}: {e}"))
 }
 
 /// subxt's RPC transport only speaks ws/wss; derive it from the http URL.

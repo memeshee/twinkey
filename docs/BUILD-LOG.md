@@ -94,3 +94,14 @@ $ curl https://twinkey.vercel.app/api/parity?block=90995
   available: True   verifier: https://twinkey-verifier.onrender.com   verdict: True
   ok  contract_has_code · ok  caller_is_mapped_signer · ok  state_consistent_with_event
 ```
+
+## 2026-10-21 — the Render-only 503
+
+The first deployment's public proof above was collected from a laptop and did not hold on the
+host. `/verify/block/90990` and `/parity/90995` returned 503 on `twinkey-verifier.onrender.com`
+with `The ChainHead V1 RPCs do not support obtaining a block hash from a number`, while the same
+binary answered correctly from this machine — the verifier's history path asked subxt to turn a
+block number into a hash, and which backend does that is decided from the node's method list *as
+seen by that instance*. Fixed by pinning `LegacyBackend` and resolving `chain_getBlockHash`
+ourselves; `/diagnostics` added so the next such difference is visible. Details in
+[DEPLOYMENT.md](DEPLOYMENT.md#the-render-only-failure-2026-10-21-and-what-removed-it).

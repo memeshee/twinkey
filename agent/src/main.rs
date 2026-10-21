@@ -119,8 +119,58 @@ async fn health(State(st): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
         "signer_ss58": st.signer_ss58,
         "substrate_rpc": st.chain.http_url,
         "substrate_ws": st.chain.ws_url,
+        "subxt_backend": st.chain.backend,
+        "subxt_backend_error": st.chain.backend_error,
+        "substrate_methods": st.chain.methods,
         "evm_rpc": st.evm.url,
         "read_policy": "history: Substrate archive at block hash; current state: EVM eth_call/eth_getCode at 'latest' only",
+    })))
+}
+
+/// `GET /diagnostics` — why the verifier works or does not work *on this host*.
+///
+/// Probes the three things that decide it, live: which RPC methods the node
+/// advertises to this instance, whether legacy `chain_getBlockHash` resolves a
+/// height, and whether `archive_v1_hashByHeight` — the call subxt's archive
+/// backend makes when asked to turn a number into a hash — succeeds here.
+/// When the archive backend is unavailable subxt silently falls through to
+/// chainHead, which cannot do number -> hash at all, and every historical read
+/// dies with "The ChainHead V1 RPCs do not support obtaining a block hash from
+/// a number". That is exactly what happened on Render while the identical
+/// binary worked on a laptop, so the answer is now observable instead of guessed.
+async fn diagnostics(State(st): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
+    const PROBE_BLOCK: u64 = 90990;
+
+    let head = st.chain.head_number().await?;
+    let legacy = match st.chain.block_hash(PROBE_BLOCK).await {
+        Ok(v) => json!({ "ok": true, "result": v }),
+        Err(e) => json!({ "ok": false, "error": e.message, "detail": e.detail }),
+    };
+    // The node accepts a JSON number and rejects the spec's string form, so both
+    // are recorded: it tells a future reader which shape this chain wants.
+    let archive_numeric = match st.chain.rpc("archive_v1_hashByHeight", json!([PROBE_BLOCK])).await {
+        Ok(v) => json!({ "ok": true, "result": v }),
+        Err(e) => json!({ "ok": false, "error": e.message, "detail": e.detail }),
+    };
+    let archive_string =
+        match st.chain.rpc("archive_v1_hashByHeight", json!([PROBE_BLOCK.to_string()])).await {
+            Ok(v) => json!({ "ok": true, "result": v }),
+            Err(e) => json!({ "ok": false, "error": e.message, "detail": e.detail }),
+        };
+
+    Ok(Json(json!({
+        "ok": true,
+        "service": "twinkey-verifier",
+        "probe_block": PROBE_BLOCK,
+        "head_block": head,
+        "subxt_backend": st.chain.backend,
+        "subxt_backend_error": st.chain.backend_error,
+        "substrate_rpc": st.chain.http_url,
+        "substrate_methods": st.chain.methods,
+        "chain_getBlockHash": legacy,
+        "archive_v1_hashByHeight_numeric": archive_numeric,
+        "archive_v1_hashByHeight_string": archive_string,
+        "read_policy": "history is read at an explicitly resolved block hash; no component is ever asked to map a number to a hash",
     })))
 }
 
@@ -580,6 +630,7 @@ async fn index() -> impl IntoResponse {
         "service": "twinkey-verifier",
         "endpoints": [
             "GET /health",
+            "GET /diagnostics",
             "GET /verify/block/:number",
             "GET /verify/tx/:hash",
             "GET /parity/:number"
@@ -645,6 +696,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(index))
         .route("/health", get(health))
+        .route("/diagnostics", get(diagnostics))
         .route("/verify/block/{number}", get(verify_block))
         .route("/verify/tx/{hash}", get(verify_tx))
         .route("/parity/{number}", get(parity))
