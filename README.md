@@ -11,7 +11,7 @@ standard EVM interface. No second wallet, no seed import, no bridging between tw
 ![TwinKey app](docs/twinkey-app.png)
 
 The screenshot above is the deployed app: both faces of one account resolved from the chain, live
-contract state over `eth_call`, a real write, decoded `revive.ContractEmitted` events, and the Rust
+contract state over `eth_call`, a real write, decoded `revive.ContractEmitted` events, and the independent
 verifier's verdict for block 90995.
 
 **Live demo:** <https://twinkey.vercel.app>
@@ -20,7 +20,7 @@ verifier's verdict for block 90995.
 **The chain's traps, with the command that reproduces each:** <https://twinkey.vercel.app/pitfalls>
 (machine-readable: <https://twinkey.vercel.app/traps.json>)
 **ERC-20 written by the ss58 key:** `0x06f6e882ada6cd5cab74214ad90c3bd1b070e4e9` (TKT, 18 dec)
-**Verifier:** <https://twinkey-verifier.kiter0211.workers.dev/ready> (Rust, Render — free tier, so the first
+**Verifier:** <https://twinkey-verifier.kiter0211.workers.dev/ready> (Cloudflare Worker — stateless, no cold start, so the first
 request after an idle spell takes ~30–60 s to cold start). `/ready` is the deep check (both upstream
 RPCs, head block); `/health` is liveness only and answers from memory, because Render kills the
 instance when its own probe takes more than 5 s
@@ -66,7 +66,7 @@ has. TwinKey closes that gap.
 ![TwinKey architecture: one SS58 key driving two runtimes](docs/diagrams/architecture.png)
 
 One key, two endpoints: reads go to the EVM RPC at `latest`, writes go to the Substrate RPC as
-`revive.call` extrinsics signed by the SS58 key, and a separate Rust process checks that both sides
+`revive.call` extrinsics signed by the SS58 key, and a separate stateless Worker checks that both sides
 agree. The editable source of that diagram is
 [`docs/diagrams/architecture.html`](docs/diagrams/architecture.html) — open it in a browser, no build
 step.
@@ -116,20 +116,20 @@ dApp can onboard its first user.
         │                                        │                                     │
         │  ReviveApi.address  ◀── H160 ──        │  viem/EIP-1193 shim                 │ state+events
         ▼                                        ▼                                     ▼
-   one account                            [Rust verifier]  ◀── eth-rpc / Substrate RPC ──
+   one account                            [verifier]  ◀── eth-rpc / Substrate RPC ──
                                           /verify/:tx, /parity/:tx
 ```
 
 - Web app: Next.js (App Router) + TypeScript + Tailwind, deployed on Vercel.
 - Signer + chain access: `@polkadot/api`, `@polkadot/extension-dapp`, `viem` for encoding.
-- Verifier: Rust (Axum + tokio + subxt) — reads the chain independently of the browser and returns
+- Verifier: Cloudflare Worker (stateless HTTPS JSON-RPC, no websocket) — reads the chain independently of the browser and returns
   a verdict a judge can `curl`.
 
 ## Repository layout
 
 ```
 app/        Next.js front end + the EIP-1193 provider shim
-agent/      Rust verifier service (/verify/:tx, /parity/:tx)
+agent/      Rust verifier service (superseded by verifier-worker/ — kept for reference) (/verify/:tx, /parity/:tx)
 tooling/    Node scripts used during development (inspect revive extrinsics, deploy, parity runs)
 contracts/  Solidity contracts used for the demo and the parity harness
 docs/       VERIFIED-FACTS.md (chain facts with the commands that produced them), notes
