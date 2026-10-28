@@ -240,18 +240,8 @@ export default function CallPane({
         onChange={(e) => setAbiText(e.target.value)}
         spellCheck={false}
         aria-label="contract ABI (JSON)"
-        rows={3}
-        style={{
-          width: "100%",
-          marginTop: 8,
-          background: "var(--surface-2)",
-          color: "var(--ink)",
-          border: "1px solid var(--line)",
-          borderRadius: 8,
-          padding: "8px 10px",
-          fontFamily: "var(--mono)",
-          fontSize: 11.5,
-        }}
+        rows={6}
+        style={{ marginTop: 10 }}
       />
       {!abi && <div className="note">ABI is not valid JSON — fix it or paste one function&apos;s fragment.</div>}
 
@@ -260,15 +250,7 @@ export default function CallPane({
           value={selected?.name ?? ""}
           onChange={(e) => pick(e.target.value)}
           aria-label="function"
-          style={{
-            background: "var(--surface-2)",
-            color: "var(--ink)",
-            border: "1px solid var(--line)",
-            borderRadius: 8,
-            padding: "8px 10px",
-            fontFamily: "var(--mono)",
-            fontSize: 12.5,
-          }}
+          style={{ maxWidth: 320 }}
         >
           {functions.length === 0 && <option value="">(no functions in ABI)</option>}
           {functions.map((f) => (
@@ -325,14 +307,24 @@ export default function CallPane({
       </div>
       {!canWrite && <div className="note">No wallet connected and demo signing is off on this deployment.</div>}
 
+      {!error && !result && (
+        <div className="term-empty">
+          {`nothing run yet — output lands here
+
+  read()   eth_call against ${address.length > 20 ? address.slice(0, 10) + "…" + address.slice(-6) : "the contract"}
+  cost     eth_estimateGas next to the runtime's own dry run
+  write    signed revive.call, receipt decoded from the emitted log`}
+        </div>
+      )}
+
       {error && (
-        <pre className="out">
+        <pre className="out term">
           <span className="err">error: {error}</span>
         </pre>
       )}
 
       {result && (
-        <pre className="out">
+        <pre className="out term">
           {result.kind === "read" && (
             <>
               <span className="ok">✓ eth_call</span>

@@ -404,6 +404,7 @@ receipt     /tx/${lastWrite.txHash}${lastWrite.blockNumber ? `\nblock view  /blo
           </div>
         )}
         {events && events.length > 0 && (
+          <div className="table-wrap">
           <table className="events">
             <thead>
               <tr>
@@ -434,6 +435,7 @@ receipt     /tx/${lastWrite.txHash}${lastWrite.blockNumber ? `\nblock view  /blo
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

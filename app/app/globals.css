@@ -128,6 +128,10 @@ h1 em {
   margin: 0 0 4px;
   letter-spacing: -0.01em;
   font-weight: 650;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .card .sub {
   color: var(--muted);
@@ -139,11 +143,24 @@ h1 em {
   display: grid;
   gap: 18px;
   grid-template-columns: 1fr;
+  align-items: stretch;
 }
 @media (min-width: 860px) {
   .grid2 {
     grid-template-columns: 1fr 1fr;
   }
+}
+/* Inside a grid, the stacking rhythm does not apply: it pushed the second card down by
+   18px and shrank it by the same amount, so the two never lined up. */
+.grid2 > .card {
+  margin-top: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+/* a card's trailing warning sits on the floor, so a short column still looks deliberate */
+.grid2 > .card > .note:last-child {
+  margin-top: auto;
 }
 
 /* ---- identity ---- */
@@ -225,6 +242,7 @@ h1 em {
 }
 button {
   font: inherit;
+  white-space: nowrap;
   font-weight: 600;
   font-size: 13.5px;
   padding: 9px 16px;
@@ -272,12 +290,58 @@ pre.out {
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 14px 16px;
-  overflow-x: auto;
+  overflow: auto;
   margin: 16px 0 0;
   font-size: 12px;
   line-height: 1.55;
   color: #c9d5e1;
   max-height: 420px;
+  tab-size: 2;
+}
+/* the output pane of the call form is a terminal: it keeps its height whether or not
+   anything has run, so the section does not jump around while you work in it */
+pre.out.term {
+  min-height: 156px;
+}
+.term-empty {
+  display: flex;
+  align-items: center;
+  min-height: 156px;
+  margin: 16px 0 0;
+  padding: 14px 16px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: #0e1216;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+textarea,
+select {
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  width: 100%;
+}
+textarea {
+  min-height: 132px;
+  line-height: 1.5;
+  resize: vertical;
+}
+select {
+  width: auto;
+}
+textarea:hover,
+select:hover {
+  border-color: var(--muted);
 }
 pre.out .ok {
   color: var(--accent);
@@ -287,8 +351,12 @@ pre.out .err {
 }
 
 /* ---- event table ---- */
+.table-wrap {
+  overflow-x: auto;
+}
 table.events {
   width: 100%;
+  min-width: 480px;
   border-collapse: collapse;
   font-size: 12.5px;
   margin-top: 6px;
@@ -330,7 +398,9 @@ table.events .ev {
   border-left: 3px solid var(--warn);
   border-radius: 10px;
   padding: 14px 18px;
+  margin: 14px 0 0;
   font-size: 13.5px;
+  line-height: 1.55;
   color: #e8d9a8;
 }
 .note b {
@@ -363,5 +433,14 @@ footer {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 560px) {
+  .tiles {
+    grid-template-columns: 1fr;
+  }
+  .tiles > div + div {
+    border-top: 1px solid var(--line);
   }
 }
