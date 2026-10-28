@@ -444,3 +444,28 @@ footer {
     border-top: 1px solid var(--line);
   }
 }
+
+/* ---- chrome ---- */
+::selection {
+  background: color-mix(in oklab, var(--accent) 30%, transparent);
+  color: #fff;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2b3540 transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2b3540;
+  border-radius: 99px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a4653;
+}
