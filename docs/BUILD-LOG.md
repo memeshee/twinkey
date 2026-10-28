@@ -191,3 +191,30 @@ seen, and the write may have been handled by a different lambda. `resolveExtrins
 `rootDirectory = app`, so the CLI uploads `app/` as the root *and* Vercel applies the setting,
 putting `package.json` one level too deep. `tooling/deploy-app.sh` deploys from the repo root
 and then verifies the routes a judge touches, because a green build is not proof.
+
+### The viem claim, checked against production
+
+`app/scripts/viem-prod-check.ts` runs the same client code the `/viem` page runs, pointed at the
+deployed endpoint:
+
+```
+$ npx tsx scripts/viem-prod-check.ts
+rpc        https://twinkey.vercel.app/api/rpc
+account    0xFd2d914Eefc568C86F907E29E02dbd2C51C462e7
+token      TKT at 0x06f6e882ada6cd5cab74214ad90c3bd1b070e4e9
+balance    4998
+tx hash    0x995c7ee1134f5dfb896536e5641fb4b681ea8b6a22aad94f0d8317704d80df4f
+block      231193 status success logs 1
+balance    4998 -> 4997
+transfer   0x06f6e882…e4e9 value 1
+RESULT     PASS — ordinary viem settled a write on Portaldot
+```
+
+`app/scripts/e2e-provider.ts` still passes 12/12 against the live chain after the reconnect work
+(`ValueSet` decoded from the receipt, `callCount` incremented). Note its "value updated" check
+compares against the value it wrote last run, so writing the same number twice reports one failure
+that is a test artifact, not a chain failure.
+
+Also fixed after watching the deployed host: `/api/health` called the chain degraded when the EVM
+endpoint took >10 s on a cold lambda, and `/api/receipt` returned an empty body because the
+hash scan was 240 serial RPCs. The probe now retries once, and the scan reads blocks 24 at a time.
