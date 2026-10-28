@@ -283,3 +283,31 @@ Two more things worth knowing:
 Verified from the registry afterwards — a clean `npm i twinkey-provider` in an empty directory
 printed `eth_chainId 0x190f1ca9`, mapped `5He7dv…UAHZ` to `0xfd2d…62e7`, and round-tripped a
 balance through 14/18 decimals exactly.
+
+## The verifier moved to a Cloudflare Worker (no websocket)
+
+The Rust verifier held a websocket to the node and paid for it three times over: idle
+sockets died, the client rebuilt on a 240 s timer, and a cold Render instance had to
+re-handshake plus pull metadata before answering — which is what produced the
+`/api/state` 503s that filled the keepalive log.
+
+Every fact that service reported is available over **HTTPS JSON-RPC**, so
+`verifier-worker/` answers from one round trip per check with no socket at all:
+
+| route | source |
+|---|---|
+| `/health`, `/ready`, `/diagnostics` | `chain_getHeader` (substrate), `eth_blockNumber` (EVM) |
+| `/verify/block/:n` | `archive_v1_hashByHeight` + `chain_getBlock` + `state_getStorage(System::Events)` |
+| `/parity/:n` | the same, plus `eth_getBlockByNumber` at the same height |
+| `/verify/tx/:hash` | **501** — a receipt verdict it cannot compute is worse than none |
+
+Two node quirks this cost, both measured:
+
+- `archive_v1_hashByHeight` returns a **one-element array**, not a hash.
+- The EVM endpoint has no `chain_getHeader`; probe it with `eth_blockNumber`.
+
+`tooling/deploy-verifier.sh` now runs `wrangler deploy` and then proves `/ready`,
+`/verify/block/90990` and `/parity/90995` against the live chain. The Vercel project's
+`TWINKEY_VERIFIER_URL` is the only thing that had to change in the app — and note it is
+a *Secret* env var, so a code default alone will not move it.
+

@@ -8,3 +8,10 @@ target/
 .DS_Store
 .scratch-chain/
 .vercel
+
+# worker tooling
+verifier-worker/.wrangler/
+verifier-worker/node_modules/
+
+# local build output
+agent/target/
