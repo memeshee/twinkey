@@ -214,3 +214,12 @@ itself and in the README at submission time.
 ## License
 
 MIT. Portaldot Hacker House 2026 submission.
+
+## Package
+
+`packages/twinkey-provider` is the provider as a library — `createTwinKeyProvider`,
+`keyringSigner`, `extensionSigner`, `fromExtension`, `getApi`, the decimals helpers and the
+probe ABI. Build it with `npm run build` inside that directory (tsup, ESM + CJS + d.ts).
+
+The provider is also exposed at runtime as `window.twinKey` on the deployed app, so the
+extension-facing path can be inspected without installing anything.

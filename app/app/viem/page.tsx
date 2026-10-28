@@ -180,6 +180,9 @@ export default function ViemPage() {
             {busy && <span className="spin" />}
             {busy ? "running…" : "read + write 1 TKT"}
           </button>
+          <a href="/wagmi" rel="noreferrer">
+            <button>same thing in wagmi</button>
+          </a>
           <a href="/" rel="noreferrer">
             <button>back to the app</button>
           </a>
