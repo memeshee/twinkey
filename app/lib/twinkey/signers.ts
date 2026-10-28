@@ -9,12 +9,12 @@ import type { RawContractEmitted } from "./logs";
 export function keyringSigner(api: ApiPromise, pair: any, timeoutMs = 180_000): TwinKeySigner {
   return {
     ss58: pair.address,
-    async submit(tx: any): Promise<SubmitOutcome> {
+    async submit(tx: any, opts?: { nonce?: number }): Promise<SubmitOutcome> {
       return new Promise<SubmitOutcome>(async (resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("timed out waiting for inclusion")), timeoutMs);
         let unsub: (() => void) | undefined;
         try {
-          unsub = await tx.signAndSend(pair, (result: any) => {
+          unsub = await tx.signAndSend(pair, opts?.nonce === undefined ? {} : { nonce: opts.nonce }, (result: any) => {
             const { status, events, dispatchError, txHash } = result;
             if (dispatchError) {
               clearTimeout(timer);
@@ -78,12 +78,15 @@ export function extractEmitted(events: any[]): RawContractEmitted[] {
 export function extensionSigner(api: ApiPromise, injected: any, address: string, timeoutMs = 180_000): TwinKeySigner {
   return {
     ss58: address,
-    async submit(tx: any): Promise<SubmitOutcome> {
+    async submit(tx: any, opts?: { nonce?: number }): Promise<SubmitOutcome> {
       return new Promise<SubmitOutcome>(async (resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("timed out waiting for inclusion")), timeoutMs);
         let unsub: (() => void) | undefined;
         try {
-          unsub = await tx.signAndSend(address, { signer: injected.signer }, (result: any) => {
+          unsub = await tx.signAndSend(
+            address,
+            { signer: injected.signer, ...(opts?.nonce === undefined ? {} : { nonce: opts.nonce }) },
+            (result: any) => {
             const { status, events, dispatchError, txHash } = result;
             if (dispatchError) {
               clearTimeout(timer);

@@ -24,7 +24,13 @@ export type SubmitOutcome = {
  */
 export interface TwinKeySigner {
   readonly ss58: string;
-  submit(tx: any): Promise<SubmitOutcome>;
+  /**
+   * `nonce` is optional and only for recovery: polkadot.js resolves the index itself, but when a
+   * pending transaction already holds that index the node rejects the new one with
+   * `1014 Priority is too low` instead of queueing it. Passing an explicit index lets the caller
+   * step past the stuck entry rather than concluding the write path is broken.
+   */
+  submit(tx: any, opts?: { nonce?: number }): Promise<SubmitOutcome>;
 }
 
 type Listener = (...args: any[]) => void;
@@ -229,7 +235,18 @@ export function createTwinKeyProvider(opts: ProviderOptions): TwinKeyProvider {
     const depositLimit = BigInt(dry.storageDepositCharge || "0");
 
     const tx = chain.tx.revive.call(to!, nativeValue, weight, depositLimit, data);
-    const out = await signer.submit(tx);
+    let out: SubmitOutcome;
+    try {
+      out = await signer.submit(tx);
+    } catch (e) {
+      // `1014 Priority is too low … to replace another transaction already in the pool` means a
+      // pending call from an earlier attempt (a double-click, a retried POST) is holding this
+      // nonce. Wait for the queue to move and submit again one index further along.
+      if (!/1014|Priority is too low/i.test(String((e as Error)?.message ?? e))) throw e;
+      await new Promise((r) => setTimeout(r, 6_000));
+      const next = (await chain.rpc.system.accountNextIndex(signer.ss58)).toNumber?.() ?? undefined;
+      out = await signer.submit(tx, next === undefined ? undefined : { nonce: next });
+    }
     const blockNumber = out.blockNumber ?? (await headerNumber(chain, out.blockHash));
     const gasUsed = BigInt(dry.gasConsumed ?? weight.refTime ?? "0");
     const receipt = buildReceipt({
