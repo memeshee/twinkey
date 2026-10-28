@@ -44,7 +44,10 @@ export async function GET() {
       const api = await getApi();
       const [name, header] = await Promise.all([api.rpc.system.chain(), api.rpc.chain.getHeader()]);
       return { chain: name.toString(), head: header.number.toNumber() };
-    }, 6_000, "substrate ws"),
+      // A cold lambda pays for a websocket handshake plus a runtime-metadata
+      // download before the first RPC answers; 6 s was enough to make a healthy
+      // chain look degraded on the first request after idle.
+    }, 14_000, "substrate ws"),
     timed(() => evmRpc<string>("eth_blockNumber", []), 5_000, "evm rpc"),
     timed(async () => {
       const res = await fetch(`${VERIFIER}/health`, { cache: "no-store", signal: AbortSignal.timeout(8_000) });

@@ -124,3 +124,105 @@ export function rateLimited(ip: string, max = 3, windowMs = 60_000): boolean {
 
 export const clientIp = (req: Request): string =>
   req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
+
+/**
+ * Resolve an extrinsic hash to the block that contains it.
+ *
+ * A `revive.call` write returns the hash of the *extrinsic*, which the EVM node
+ * has never heard of — so any client that polls `eth_getTransactionReceipt` after
+ * a write needs somebody to do this lookup. On one lambda instance the receipt is
+ * in memory; across instances (or after a cold start) it is not, and a hash scan
+ * is the only honest answer. Blocks with fewer than two extrinsics cannot contain
+ * our call (they hold only the timestamp set), so they are skipped without a
+ * second round trip.
+ */
+export async function resolveExtrinsic(
+  hash: string,
+  lookback = 40,
+): Promise<{ blockNumber: number; blockHash: string; index: number; events: any[] } | null> {
+  const { withApi } = await import("./chain");
+  const { blake2AsHex } = await import("@polkadot/util-crypto");
+  const want = hash.toLowerCase();
+
+  return withApi(async (api) => {
+    const head = (await api.rpc.chain.getHeader()).number.toNumber();
+    for (let n = head; n > Math.max(0, head - lookback); n--) {
+      const blockHash = await api.rpc.chain.getBlockHash(n);
+      const block = await api.rpc.chain.getBlock(blockHash);
+      const exts = block.block.extrinsics;
+      if (exts.length < 2) continue;
+      for (let i = 0; i < exts.length; i++) {
+        if (blake2AsHex(exts[i].toU8a()).toLowerCase() !== want) continue;
+        const events = await api.query.system.events.at(blockHash);
+        const picked: any[] = [];
+        let eventIndex = 0;
+        for (const record of events as any) {
+          const ev = record.event;
+          if (ev.section.toLowerCase() === "revive" && ev.method === "ContractEmitted") {
+            const fields = ev.meta?.fields ?? [];
+            const get = (name: string, idx: number) => {
+              const k = fields.findIndex((f: any) => f.name?.isSome && f.name.unwrap().toString() === name);
+              return ev.data[k >= 0 ? k : idx];
+            };
+            picked.push({
+              contract: String(get("contract", 0)),
+              data: String(get("data", 1)),
+              topics: (get("topics", 2)?.toJSON?.() ?? []).map((t: any) => String(t)),
+              eventIndex,
+            });
+          }
+          eventIndex++;
+        }
+        return { blockNumber: n, blockHash: blockHash.toHex(), index: i, events: picked };
+      }
+    }
+    return null;
+  });
+}
+
+/**
+ * A receipt shaped like the EVM one, built from Substrate-side evidence.
+ *
+ * viem's `waitForTransactionReceipt` is picky: it wants `status`, `logs` with
+ * topics and data, and matching block fields. The log entries come from
+ * `revive.ContractEmitted`, the event that carries the EVM log \u2014 the EVM
+ * endpoint's own log index does not include native-origin calls at all.
+ */
+export function receiptFromResolution(
+  hash: string,
+  resolved: { blockNumber: number; blockHash: string; index: number; events: any[] },
+  to?: string,
+) {
+  const hexBlock = "0x" + resolved.blockNumber.toString(16);
+  return {
+    transactionHash: hash.toLowerCase(),
+    transactionIndex: "0x" + resolved.index.toString(16),
+    blockHash: resolved.blockHash,
+    blockNumber: hexBlock,
+    to,
+    cumulativeGasUsed: "0x0",
+    gasUsed: "0x0",
+    effectiveGasPrice: "0x0",
+    contractAddress: null,
+    status: "0x1",
+    type: "0x0",
+    logs: resolved.events.map((e: any, i: number) => ({
+      address: e.contract,
+      topics: e.topics,
+      data: e.data,
+      blockNumber: hexBlock,
+      blockHash: resolved.blockHash,
+      transactionHash: hash.toLowerCase(),
+      transactionIndex: "0x" + resolved.index.toString(16),
+      logIndex: "0x" + i.toString(16),
+      removed: false,
+    })),
+    /** not part of an EVM receipt: where this answer came from */
+    twinKey: {
+      source: "substrate archive (extrinsic hash resolved by scanning blocks)",
+      blockNumber: resolved.blockNumber,
+      extrinsicIndex: resolved.index,
+      nativePath: true,
+    },
+  };
+}

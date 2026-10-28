@@ -1,0 +1,11 @@
+{
+  "name": "TwinKeyToken",
+  "symbol": "TKT",
+  "decimals": 18,
+  "address": "0x06f6e882ada6cd5cab74214ad90c3bd1b070e4e9",
+  "deployerSs58": "5DMLUzwxrQsPwc9dsjz4WUVSy4qryn2xWhtvv4RDkjBko9C7",
+  "deployerH160": "0xe70fd7e24a9eee0d3a7302866e0e1e9597f4d934",
+  "deployTxExtrinsic": "0x0af3d62c95eec4cf4b2e7a292adc8a8db2009a0aaf92db620b43028184de7ba9",
+  "deployBlockHash": "0x35ef90df1968347595d1df8c42819e5254920750daa4e07adab13ccf87733e2c",
+  "note": "Deployed by revive.instantiateWithCode signed with the ss58 key. owner() and the 1,000,000 TKT initial supply land on the account's mapped H160, which is what msg.sender was inside the constructor."
+}

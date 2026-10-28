@@ -533,7 +533,9 @@ const receipt = await wallet.waitForTransactionReceipt({ hash });
           <a href="https://github.com/memeshee/twinkey">github.com/memeshee/twinkey</a>
         </span>
         <span>
-          contract <span className="mono">{short(state?.contract.address, 10, 6)}</span>
+          <a href="/viem">unmodified viem</a> · <a href="/pitfalls">pitfalls</a> ·{" "}
+          <a href="/traps.json">traps.json</a> · contract{" "}
+          <span className="mono">{short(state?.contract.address, 10, 6)}</span>
         </span>
       </footer>
     </div>

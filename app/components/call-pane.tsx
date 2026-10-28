@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 
 import { TWINKEY_PROBE_ABI, TWINKEY_PROBE_ADDRESS } from "@/lib/twinkey/abi";
+import { TWINKEY_TOKEN_ABI, TWINKEY_TOKEN_ADDRESS, TWINKEY_TOKEN_SYMBOL } from "@/lib/twinkey/token";
 
 /**
  * The generic call surface.
@@ -219,6 +220,18 @@ export default function CallPane({
           }}
         >
           use the probe contract
+        </button>
+        <button
+          onClick={() => {
+            setAddress(TWINKEY_TOKEN_ADDRESS);
+            setAbiText(JSON.stringify(TWINKEY_TOKEN_ABI as any));
+            setFnName("transfer");
+            setArgs([TWINKEY_PROBE_ADDRESS, "1"]);
+            setResult(null);
+            setError(null);
+          }}
+        >
+          use the {TWINKEY_TOKEN_SYMBOL} token
         </button>
       </div>
 

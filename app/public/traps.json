@@ -1,0 +1,107 @@
+{
+  "title": "Portaldot V3 pitfalls",
+  "subtitle": "What breaks when you point ordinary EVM tooling at PortaldotV3 Test. Each entry says how to check it, what it costs you, and what to do instead. Measured 2026-10-18 → 2026-10-28 against wss://test-node-v3.portaldot.dev and https://test-evm-rpc-v3.portaldot.dev.",
+  "generated": "2026-10-28",
+  "traps": [
+    {
+      "id": "eoa-writes-rejected",
+      "title": "An external EOA cannot send an EVM transaction at all",
+      "symptom": "eth_sendRawTransaction with every tx type, fee and gas combination returns {\"code\":1010,\"message\":\"Invalid Transaction\"}. Reads on the same endpoint answer normally.",
+      "check": "cast send --rpc-url https://test-evm-rpc-v3.portaldot.dev <to> 'setValue(uint256)' 42 --private-key <key>   # → Invalid Transaction",
+      "cost": "A MetaMask/Remix workflow cannot complete its first write. Deploying from Remix fails too.",
+      "workaround": "Sign revive.call (or revive.instantiate_with_code) as a Substrate extrinsic with an sr25519 key: revive.call(dest, value, weight_limit, storage_deposit_limit, data). TwinKey is that path with a UI and an EIP-1193 provider.",
+      "evidence": "docs/FINDINGS.md §1 · revive.originalAccount(0x7FCC…) → none",
+      "severity": "blocking"
+    },
+    {
+      "id": "estimate-gas-inflated",
+      "title": "eth_estimateGas is off by four orders of magnitude",
+      "symptom": "A trivial call estimates in the 10^11–10^15 range while the block advertises gasLimit = u64::MAX, so any tool that auto-fills gas builds a transaction no balance can pay for.",
+      "check": "POST /api/estimate {to, data} → evm_estimate.gas vs runtime_dry_run.gasConsumed",
+      "cost": "Measured live on 2026-10-28: 570,540,468,341 vs 50,604,168 — 11,274×. A 401 tPOT wallet cannot cover a 50k-gas call priced at 5.7e11.",
+      "workaround": "Use ReviveApi_call's dry run: it returns weightRequired {refTime, proofSize} and storageDeposit.charge, which is exactly what revive.call consumes — and unused weight is refunded.",
+      "evidence": "https://twinkey.vercel.app/api/estimate · docs/BUILD-LOG.md",
+      "severity": "blocking"
+    },
+    {
+      "id": "logs-omit-native-calls",
+      "title": "eth_getLogs silently omits logs from native-origin calls",
+      "symptom": "eth_getLogs over the full block range for a contract that definitely emitted returns []. Our own contract emitted at blocks 90995, 102680, 102716, 227275 and appears zero times.",
+      "check": "POST eth_getLogs {fromBlock:0x0, toBlock:'latest', address:<your contract>} — compare with the events of the same block",
+      "cost": "Any indexer or dApp built on eth_getLogs is blind to every write that arrived through the native path — which, per the first entry, is every write.",
+      "workaround": "Read System.Events from the Substrate archive node and decode revive.ContractEmitted against your ABI. TwinKey's event feed and its /api/rpc receipts both do this.",
+      "evidence": "lib/twinkey/scan.ts · /block/227275",
+      "severity": "silent-wrong-data"
+    },
+    {
+      "id": "decimals-14-vs-18",
+      "title": "Native is 14 decimals, EVM is 18 — the ratio is 10,000",
+      "symptom": "The same balance reads 1.0000 on the Substrate side and 10000.000000000000000000 on the EVM side. nativeToEthRatio = 10000.",
+      "check": "system.account(ss58).data.free vs eth_getBalance(mappedH160)",
+      "cost": "Every amount that crosses the boundary is wrong by 10,000×, in the direction that silently overpays.",
+      "workaround": "Keep bigint on both sides with an explicit decimal context; convert only at the boundary. TwinKey shows both denominators side by side rather than pretending there is one.",
+      "evidence": "lib/twinkey/config.ts · /api/state",
+      "severity": "silent-wrong-data"
+    },
+    {
+      "id": "address-mapping-must-come-from-chain",
+      "title": "The H160 is not derivable from the SS58 key",
+      "symptom": "Common derivations (first/last 20 bytes of the public key, keccak, blake2 truncation) produce an address the chain disagrees with; funds sent there are still visible but not spendable from the EVM side.",
+      "check": "curl state_call ReviveApi_address <accountId32-hex> → compare with any local derivation",
+      "cost": "Wrong msg.sender, wrong balance, and a wallet that looks funded but cannot act.",
+      "workaround": "Ask the runtime every time. TwinKey never derives locally, and says so in the UI.",
+      "evidence": "lib/twinkey/chain.ts resolveH160 · docs/VERIFIED-FACTS.md",
+      "severity": "blocking"
+    },
+    {
+      "id": "evm-rpc-prunes-state",
+      "title": "Only the EVM RPC prunes; the Substrate RPC is archival",
+      "symptom": "eth_call / eth_getBlockByNumber at a historical block fail with \"UnknownBlock: State already discarded\" beyond roughly 256 blocks, while state_getStorage at block 1 answers.",
+      "check": "eth_call at block N-1000 (fails) vs state_getStorage at the block hash (succeeds)",
+      "cost": "Historical verification looks impossible on the EVM side, so people conclude history is gone and start their index at today.",
+      "workaround": "Read history from the Substrate archive at a block hash; use the EVM endpoint only for current state and simulation. server-side: /verify reads archive, always.",
+      "evidence": "docs/BUILD-LOG.md corrections · agent/src/chain.rs",
+      "severity": "footgun"
+    },
+    {
+      "id": "instantiate-with-code-args",
+      "title": "revive.instantiate_with_code wants constructor args inside the code blob",
+      "symptom": "Passing constructor calldata in the `data` field fails with revive.EvmConstructorNonEmptyData: \"When calling an EVM constructor `data` has to be empty.\"",
+      "check": "any deployment with a constructor that takes arguments",
+      "cost": "An hour of confusion on the one path the official guide does not cover for parameterised constructors.",
+      "workaround": "code = creation_code + encodeAbiParameters(...); data = 0x; salt = null. tooling/deploy-token.mjs does exactly this.",
+      "evidence": "tooling/deploy-token.mjs · contracts/build/TwinKeyToken.deployed.json",
+      "severity": "footgun"
+    },
+    {
+      "id": "polkadotjs-contractcode-enum",
+      "title": "@polkadot/api needs RevealApi.instantiate's code as a ContractCode enum",
+      "symptom": "api.call.reviveApi.instantiate(origin, value, gas, deposit, <bytes>, data, salt) throws createType(...ContractCodeV1) Unable to create Enum via index 96.",
+      "check": "dry run before instantiate_with_code",
+      "cost": "The 7-argument runtime API is undocumented; the error points at SCALE, not at the argument.",
+      "workaround": "Pass { Upload: codeHex } instead of raw bytes.",
+      "evidence": "tooling/deploy-token.mjs",
+      "severity": "footgun"
+    },
+    {
+      "id": "user-agent-required",
+      "title": "Both RPC hosts answer 403 without a User-Agent",
+      "symptom": "A bare fetch/reqwest from a server gets 403 with an empty body; curl works because it sends a UA.",
+      "check": "curl -H 'User-Agent:' https://test-node-v3.portaldot.dev",
+      "cost": "Server-side integrations fail while the same code works in a browser, which reads as \"the node is down\".",
+      "workaround": "Set an explicit UA on every service client (the Rust verifier does).",
+      "evidence": "agent/src/main.rs",
+      "severity": "footgun"
+    },
+    {
+      "id": "native-transfer-to-h160",
+      "title": "Native tPOT cannot be sent straight to an H160",
+      "symptom": "Air-dropping to 0x… leaves the native account empty and the EVM balance at zero.",
+      "check": "balances.transfer to the H160 vs to the H160's mapped SS58 via reviveApi.accountId",
+      "cost": "A funded-looking deployment that cannot pay for anything.",
+      "workaround": "Fund the native SS58 account; the mapping makes the balance visible on the EVM side (one-directional for funding).",
+      "evidence": "docs/VERIFIED-FACTS.md · ~/hackathon/portaldot-hh26-memo-addendum.md §1",
+      "severity": "blocking"
+    }
+  ]
+}
