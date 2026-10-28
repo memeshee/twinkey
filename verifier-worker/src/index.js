@@ -188,18 +188,34 @@ async function handler(request) {
     const failed = Object.keys(checks).filter((k) => !checks[k]);
     const ok = failed.length === 0;
 
+    // The app renders `checks` as an array of {ok, name, detail} and `verdict` as a
+    // boolean, which is the shape the Rust service produced. Keep a map alongside it
+    // for anyone reading the JSON directly.
+    const checksArr = Object.entries(checks).map(([name, pass]) => ({
+      ok: pass,
+      name,
+      detail: pass ? "verified over HTTPS JSON-RPC" : "could not be verified",
+    }));
+    const summary = [
+      `height ${height}`,
+      `substrate ${substrateSide ? substrateSide.extrinsics + " extrinsics, " + substrateSide.events_bytes + " event bytes" : "unavailable"}`,
+      `evm ${evmSide && evmSide.number !== undefined ? evmSide.transactions + " transactions, hash " + evmSide.hash : "unavailable"}`,
+      ok ? "both runtimes agree on this height" : `failed checks: ${failed.join(", ")}`,
+    ];
+
     const body = {
       ok,
+      available: true,
       service: SERVICE,
       version: VERSION,
       block: height,
       substrate: substrateSide,
       evm: evmSide,
-      checks,
+      checks: checksArr,
+      checks_map: checks,
       parity: checks.heights_agree,
-      verdict: ok
-        ? { ok: true, summary: `height ${height} present on both runtimes; substrate ${substrateSide.extrinsics} extrinsics, evm ${evmSide ? evmSide.transactions : "?"} transactions` }
-        : { ok: false, error: `checks failed: ${failed.join(", ")}`, checks },
+      verdict: ok,
+      summary,
       ...(blockMatch ? {} : { mode: "parity" }),
     };
     return json(body, ok ? 200 : 502);
