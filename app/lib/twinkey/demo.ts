@@ -146,35 +146,57 @@ export async function resolveExtrinsic(
 
   return withApi(async (api) => {
     const head = (await api.rpc.chain.getHeader()).number.toNumber();
-    for (let n = head; n > Math.max(0, head - lookback); n--) {
+    const lowest = Math.max(0, head - lookback);
+    // Batched, not sequential: 120 blocks x 2 round trips one at a time does not
+    // fit in a serverless request, and the second-round-trip cost is the whole
+    // problem. 24-at-a-time turns ~240 serial RPCs into ~10.
+    const BATCH = 24;
+
+    const examine = async (n: number) => {
       const blockHash = await api.rpc.chain.getBlockHash(n);
       const block = await api.rpc.chain.getBlock(blockHash);
       const exts = block.block.extrinsics;
-      if (exts.length < 2) continue;
+      if (exts.length < 2) return null;
       for (let i = 0; i < exts.length; i++) {
-        if (blake2AsHex(exts[i].toU8a()).toLowerCase() !== want) continue;
-        const events = await api.query.system.events.at(blockHash);
-        const picked: any[] = [];
-        let eventIndex = 0;
-        for (const record of events as any) {
-          const ev = record.event;
-          if (ev.section.toLowerCase() === "revive" && ev.method === "ContractEmitted") {
-            const fields = ev.meta?.fields ?? [];
-            const get = (name: string, idx: number) => {
-              const k = fields.findIndex((f: any) => f.name?.isSome && f.name.unwrap().toString() === name);
-              return ev.data[k >= 0 ? k : idx];
-            };
-            picked.push({
-              contract: String(get("contract", 0)),
-              data: String(get("data", 1)),
-              topics: (get("topics", 2)?.toJSON?.() ?? []).map((t: any) => String(t)),
-              eventIndex,
-            });
-          }
-          eventIndex++;
+        if (blake2AsHex(exts[i].toU8a()).toLowerCase() === want) {
+          return { n, blockHash, index: i };
         }
-        return { blockNumber: n, blockHash: blockHash.toHex(), index: i, events: picked };
       }
+      return null;
+    };
+
+    for (let top = head; top > lowest; top -= BATCH) {
+      const numbers: number[] = [];
+      for (let n = top; n > Math.max(lowest, top - BATCH); n--) numbers.push(n);
+      const found = (await Promise.all(numbers.map((n) => examine(n).catch(() => null)))).find(Boolean);
+      if (!found) continue;
+
+      const records = await api.query.system.events.at(found.blockHash);
+      const picked: any[] = [];
+      let eventIndex = 0;
+      for (const record of records as any) {
+        const ev = record.event;
+        if (ev.section.toLowerCase() === "revive" && ev.method === "ContractEmitted") {
+          const fields = ev.meta?.fields ?? [];
+          const get = (name: string, idx: number) => {
+            const k = fields.findIndex((f: any) => f.name?.isSome && f.name.unwrap().toString() === name);
+            return ev.data[k >= 0 ? k : idx];
+          };
+          picked.push({
+            contract: String(get("contract", 0)),
+            data: String(get("data", 1)),
+            topics: (get("topics", 2)?.toJSON?.() ?? []).map((t: any) => String(t)),
+            eventIndex,
+          });
+        }
+        eventIndex++;
+      }
+      return {
+        blockNumber: found.n,
+        blockHash: found.blockHash.toHex(),
+        index: found.index,
+        events: picked,
+      };
     }
     return null;
   });
