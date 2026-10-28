@@ -1,0 +1,9 @@
+# Keep `vercel deploy` (if anyone uses it) from uploading build artefacts.
+# agent/target is 2.7 GB and the CLI aborts above 100 MB; app/.next and
+# node_modules are rebuilt on Vercel anyway.
+agent/target
+app/.next
+app/node_modules
+tooling/node_modules
+*.log
+.DS_Store

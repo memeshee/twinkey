@@ -83,6 +83,13 @@ export async function GET() {
       substrate: substrate.value ?? null,
       evm_block: evm.value ?? null,
       verifier_info: verifier.value ?? null,
+      // Which build is answering. Vercel sets these on every deployment, so a
+      // "did my push actually ship?" question has a factual answer instead of an
+      // assumption about build queues.
+      git_sha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+      git_sha_short: (process.env.VERCEL_GIT_COMMIT_SHA ?? "").slice(0, 7) || null,
+      git_ref: process.env.VERCEL_GIT_COMMIT_REF ?? null,
+      deployment_url: process.env.VERCEL_URL ?? null,
       api_age_ms: apiAgeMs(),
       demo_signing: Boolean(process.env.PORTALDOT_KEY || process.env.PORTALDOT_SECRET_URI),
       config: {
