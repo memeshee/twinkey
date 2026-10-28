@@ -105,3 +105,89 @@ block number into a hash, and which backend does that is decided from the node's
 seen by that instance*. Fixed by pinning `LegacyBackend` and resolving `chain_getBlockHash`
 ourselves; `/diagnostics` added so the next such difference is visible. Details in
 [DEPLOYMENT.md](DEPLOYMENT.md#the-render-only-failure-2026-10-21-and-what-removed-it).
+
+## 2026-10-28 — reliability, a call surface, a token, a JSON-RPC endpoint
+
+Everything below was measured against the live chain and the deployed hosts today.
+
+### Three live failures, found by probing the deployment rather than trusting it
+
+- `/api/state` answered `{"error":"WebSocket is not connected …"}`: the memoised `ApiPromise`
+  could be a socket the node had already closed, and nothing checked `isConnected`.
+- `/api/demo-write` returned `FUNCTION_INVOCATION_TIMEOUT` **after the write had landed**
+  (`callCount` went 9 → 11 across two POSTs). A judge would have read "failed" about a
+  successful transaction.
+- `/api/parity` and the verifier's own `/verify/block/90990` returned 503 for days with
+  `The background task closed connection closed; restart required`, while `/health` kept
+  answering from memory. The Rust process held one `OnlineClient` for its whole life.
+
+Fixes: `getApi` checks `isConnected` and rebuilds; `withApi` retries once behind a fresh
+connection; every upstream call runs under a deadline; the verifier's client lives in a slot
+that rebuilds every 240 s and once per error, with `client.age_s` / `client.rebuilds` exposed
+in `/health` and `/ready`. `/api/health` reports each upstream with live latency, and a write
+whose receipt is slow returns 202 + the hash instead of 500.
+
+### The call surface stopped being a demo of one function
+
+`/api/call`, `/api/read`, `/api/estimate` take any address and any calldata; the new `CallPane`
+takes any JSON ABI. Measured through it:
+
+```
+$ curl -sX POST localhost:3000/api/call -H 'content-type: application/json' \
+    -d '{"to":"0x19d5aa…7725","data":"0x55241077…1092"}'          # setValue(4242)
+tx hash 0x6bcd0dfa1b1e0b25a5b60a9e5b68e058c6baae8c63e3ef84635626043d5efd84
+block   0x377cb (227275)   log ValueSet(caller=0xfd2d…62e7, value=4242, callCount=12)
+```
+
+```
+$ curl -sX POST localhost:3000/api/estimate … setValue(4242)
+evm_estimate     570540468341
+runtime_dry_run  gasConsumed 50604168 · weightRequired {refTime 506041677, proofSize 31937}
+ratio            11274×        verdict: do not trust eth_estimateGas on this chain
+```
+
+### An ERC-20 written by the ss58 key
+
+`tooling/deploy-token.mjs` compiles `contracts/TwinKeyToken.sol` and dispatches
+`revive.instantiate_with_code` signed by `5DMLUzwx…Bko9C7`. Two runtime traps cost an hour and
+are now documented in `/pitfalls`:
+
+- EVM constructor input must be **inside the code blob**; a non-empty `data` fails with
+  `revive.EvmConstructorNonEmptyData`.
+- `@polkadot/api`'s `reviveApi.instantiate` wants `code` as the `ContractCode` enum, i.e.
+  `{ Upload: codeHex }`, not raw bytes, and takes **7** arguments (salt included).
+
+```
+contract     0x06f6e882ada6cd5cab74214ad90c3bd1b070e4e9
+deploy tx    0x0af3d62c95eec4cf4b2e7a292adc8a8db2009a0aaf92db620b43028184de7ba9
+block        0x35ef90df…733e2c
+owner()      0xe70fd7e24a9eee0d3a7302866e0e1e9597f4d934  (the ss58 account's mapped H160)
+totalSupply  1000000000000000000000000  · decimals 18 · code 1863 bytes
+```
+
+`tooling/token-transfer.mjs` then moved 5,000 TKT to the demo account
+(`0x65ea6059…7cbe3`, `Transfer(0xe70f…d934 → 0xfd2d…62e7, 5000e18)`).
+
+### A JSON-RPC endpoint whose writes are sr25519 extrinsics
+
+`/api/rpc` forwards reads to the EVM node and signs writes with the demo key, so **ordinary
+viem code works against a URL** — that is `/viem`, running in a browser with no extension:
+
+```
+eth_sendTransaction → 0x2485483de2bf58b4ecde553a32f2f60bf3b2762b20698ebb6cd6bfb9526f5a77
+eth_getTransactionReceipt → block 230867, status 0x1, 1 log,
+  topic0 0xddf252ad… (Transfer) value 2e18
+  source: "substrate archive (extrinsic hash resolved by scanning blocks)"
+```
+
+The receipt is the interesting part: the hash is an **extrinsic** hash the EVM node has never
+seen, and the write may have been handled by a different lambda. `resolveExtrinsic()` in
+`lib/twinkey/demo.ts` scans recent blocks for it and rebuilds an EVM-shaped receipt from
+`revive.ContractEmitted`, so `waitForTransactionReceipt` works statelessly.
+
+### Deploying the app, correctly
+
+`vercel deploy` from inside `app/` fails with `[NEXT_NO_VERSION]` — the project has
+`rootDirectory = app`, so the CLI uploads `app/` as the root *and* Vercel applies the setting,
+putting `package.json` one level too deep. `tooling/deploy-app.sh` deploys from the repo root
+and then verifies the routes a judge touches, because a green build is not proof.

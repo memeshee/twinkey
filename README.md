@@ -4,7 +4,7 @@
 Portaldot V3 — the same key that holds your POT pays gas, calls contracts, and reads state over a
 standard EVM interface. No second wallet, no seed import, no bridging between two identities.
 
-> Status: **in build** (Portaldot Hacker House 2026, track *Modular Cloud & Middleware*).
+> Status: **live on Portaldot V3 testnet** (Portaldot Hacker House 2026, track *Modular Cloud & Middleware*).
 > Live chain facts, including the ones this product depends on, are in
 > [`docs/VERIFIED-FACTS.md`](docs/VERIFIED-FACTS.md) — every one reproducible with a `curl`.
 
@@ -15,6 +15,10 @@ contract state over `eth_call`, a real write, decoded `revive.ContractEmitted` e
 verifier's verdict for block 90995.
 
 **Live demo:** <https://twinkey.vercel.app>
+**Unmodified viem against a JSON-RPC endpoint:** <https://twinkey.vercel.app/viem>
+**The chain's traps, with the command that reproduces each:** <https://twinkey.vercel.app/pitfalls>
+(machine-readable: <https://twinkey.vercel.app/traps.json>)
+**ERC-20 written by the ss58 key:** `0x06f6e882ada6cd5cab74214ad90c3bd1b070e4e9` (TKT, 18 dec)
 **Verifier:** <https://twinkey-verifier.onrender.com/ready> (Rust, Render — free tier, so the first
 request after an idle spell takes ~30–60 s to cold start). `/ready` is the deep check (both upstream
 RPCs, head block); `/health` is liveness only and answers from memory, because Render kills the
@@ -166,6 +170,11 @@ Exact commands and their output are in [`docs/BUILD-LOG.md`](docs/BUILD-LOG.md).
 | External EOA can write over the EVM JSON-RPC | **no** — `Invalid Transaction` for every tx type; see `docs/FINDINGS.md`. Reads work. |
 | `eth_getLogs` returns logs from native-path calls | **no** — returns `[]` for our own contract across the full range. The app scans Substrate events and merges receipts instead. |
 | Rust verifier verdict for a call | see `agent/` — endpoints and their real output are in the agent README |
+| Any contract, any calldata, signed as `revive.call` | **real** — `/api/call` wrote `setValue(4242)` at block 227275, tx `0x6bcd0dfa…5efd84` |
+| Ordinary viem code settles a write through a JSON-RPC URL | **real** — `/viem` + `/api/rpc`, tx `0x2485483d…6f5a77`, receipt at block 230867 |
+| A receipt resolvable without the serving instance | **real** — `/api/receipt` and `/api/rpc` rebuild it from the archive by scanning for the extrinsic hash |
+| An ERC-20 deployed and owned by an ss58 account | **real** — `0x06f6e882…e4e9`, owner = mapped `H160`, deploy tx `0x0af3d62c…e7ba9` |
+| The cost of a call, told honestly | **real, live** — `/api/estimate` returns `eth_estimateGas` alongside the runtime dry run: **11,274×** apart |
 
 
 
