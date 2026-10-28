@@ -1,6 +1,6 @@
 [package]
 name = "twinkey-verifier"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.88"
 description = "Independent HTTP verifier for TwinKey parity receipts on Portaldot V3"
@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 axum = "=0.8.9"
-tokio = { version = "=1.53.3", features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
+tokio = { version = "=1.53.3", features = ["rt-multi-thread", "macros", "net", "signal", "time", "sync"] }
 subxt = "=0.51.1"
 reqwest = { version = "=0.13.5", features = ["json"] }
 serde = { version = "=1.0.229", features = ["derive"] }

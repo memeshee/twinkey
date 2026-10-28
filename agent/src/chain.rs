@@ -6,6 +6,7 @@
 //! ever asked of the EVM endpoint.
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -13,8 +14,9 @@ use subxt::{
     backend::LegacyBackend,
     rpcs::RpcClient,
     utils::H256,
-    OnlineClient, PolkadotConfig,
+    OnlineClient, OnlineClientAtBlock, PolkadotConfig,
 };
+use tokio::sync::Mutex;
 
 use crate::error::{ApiError, ApiResult};
 
@@ -50,17 +52,38 @@ impl Default for RpcMethods {
     }
 }
 
+/// How long a websocket client is reused before it is rebuilt from scratch.
+///
+/// The node closes idle websockets on its own schedule. The previous build held
+/// one `OnlineClient` for the lifetime of the process; when the node dropped the
+/// socket, every later read failed with "The background task closed connection
+/// closed; restart required" and the process — still answering `/health` from
+/// memory — never recovered. A judge clicking the parity pane then got a 503
+/// from a service that looked alive. Rebuilding on a timer, and once more on the
+/// first error, makes a dead socket a ~1 s hiccup instead of a permanent outage.
+const CLIENT_TTL: Duration = Duration::from_secs(240);
+
+struct ClientSlot {
+    client: OnlineClient<PolkadotConfig>,
+    backend: String,
+    backend_error: Option<String>,
+    built_at: Instant,
+    /// Number of rebuilds since start: visible in `/ready`, so "it recovered" is
+    /// an observable fact rather than a claim.
+    rebuilds: u64,
+}
+
 #[derive(Clone)]
 pub struct Chain {
     pub http_url: String,
     pub ws_url: String,
-    /// Which subxt backend/transport is actually in use ("legacy/HTTP", ...).
+    /// Which subxt backend/transport was chosen at startup ("legacy/WS", ...).
     pub backend: String,
     /// Why the preferred (legacy/HTTP) transport was not used, if it was not.
     pub backend_error: Option<String>,
     pub methods: RpcMethods,
     http: reqwest::Client,
-    client: OnlineClient<PolkadotConfig>,
+    slot: Arc<Mutex<ClientSlot>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -101,18 +124,100 @@ impl Chain {
         // needs nothing but plain JSON-RPC and is identical on every host; the
         // combined one is kept as a fallback only, and `revive_events` never asks
         // either of them to map a number to a hash.
-        let (client, backend, backend_error) = match build_legacy(&ws_url).await {
-            Ok(c) => (c, "legacy/WS".to_string(), None),
-            Err(e1) => match OnlineClient::<PolkadotConfig>::from_insecure_url(&ws_url).await {
-                Ok(c) => (c, "combined/WS (fallback)".to_string(), Some(e1)),
-                Err(e2) => {
-                    return Err(format!(
-                        "cannot connect to Substrate RPC {ws_url}: legacy: {e1}; combined: {e2}"
-                    ))
-                }
-            },
+        let (client, backend, backend_error) = build_any(&ws_url).await?;
+        let slot = ClientSlot {
+            client,
+            backend: backend.clone(),
+            backend_error: backend_error.clone(),
+            built_at: Instant::now(),
+            rebuilds: 0,
         };
-        Ok(Self { http_url, ws_url, backend, backend_error, methods, http, client })
+        Ok(Self {
+            http_url,
+            ws_url,
+            backend,
+            backend_error,
+            methods,
+            http,
+            slot: Arc::new(Mutex::new(slot)),
+        })
+    }
+
+    /// A client that is worth using: rebuilt if it is older than `CLIENT_TTL`.
+    pub async fn client(&self) -> ApiResult<OnlineClient<PolkadotConfig>> {
+        let fresh = {
+            let slot = self.slot.lock().await;
+            if slot.built_at.elapsed() < CLIENT_TTL {
+                Some(slot.client.clone())
+            } else {
+                None
+            }
+        };
+        match fresh {
+            Some(c) => Ok(c),
+            None => self.rebuild().await,
+        }
+    }
+
+    /// Throw the current client away and connect again. Any error here is a real
+    /// upstream outage: the caller surfaces it instead of pretending.
+    pub async fn rebuild(&self) -> ApiResult<OnlineClient<PolkadotConfig>> {
+        let (client, backend, backend_error) = build_any(&self.ws_url).await.map_err(|e| {
+            ApiError::upstream("substrate", format!("reconnecting to {}: {e}", self.ws_url))
+        })?;
+        let mut slot = self.slot.lock().await;
+        slot.client = client.clone();
+        slot.backend = backend;
+        slot.backend_error = backend_error;
+        slot.built_at = Instant::now();
+        slot.rebuilds += 1;
+        Ok(client)
+    }
+
+    /// `(backend, age_seconds, rebuilds)` — what the outage dashboard needs.
+    pub async fn client_status(&self) -> (String, u64, u64) {
+        let slot = self.slot.lock().await;
+        (
+            slot.backend.clone(),
+            slot.built_at.elapsed().as_secs(),
+            slot.rebuilds,
+        )
+    }
+
+    /// Never blocks: `None` while a rebuild is in flight. For liveness probes that
+    /// must answer in microseconds even mid-reconnect.
+    pub fn client_status_now(&self) -> Option<(String, u64, u64)> {
+        match self.slot.try_lock() {
+            Ok(slot) => Some((
+                slot.backend.clone(),
+                slot.built_at.elapsed().as_secs(),
+                slot.rebuilds,
+            )),
+            Err(_) => None,
+        }
+    }
+
+    /// Block-scoped reader with one reconnect-and-retry behind it.
+    ///
+    /// A websocket that died between two requests is indistinguishable from a
+    /// chain error at the call site, so the recovery is done here once: rebuild,
+    /// then retry. The retry is deliberately not repeated — if a fresh socket
+    /// also fails, the node is genuinely unhappy and the error is the answer.
+    pub async fn at_block(&self, want: H256) -> ApiResult<OnlineClientAtBlock<PolkadotConfig>> {
+        let hash = format!("0x{}", hex::encode(want.as_bytes()));
+        let client = self.client().await?;
+        match client.at_block(want).await {
+            Ok(at) => Ok(at),
+            Err(first) => {
+                let client = self.rebuild().await?;
+                client.at_block(want).await.map_err(|second| {
+                    ApiError::upstream(
+                        "substrate",
+                        format!("at_block({hash}): {first}; after reconnect: {second}"),
+                    )
+                })
+            }
+        }
     }
 
     /// Raw JSON-RPC over HTTP. Used for everything except event decoding, where
@@ -208,8 +313,26 @@ impl Chain {
     }
 
     /// Fetch every `Revive` event at `number` by reading System.Events at that
-    /// block hash. Errors (missing block, RPC failure) bubble up as ApiError.
+    /// block hash. One reconnect is attempted before the error is returned.
     pub async fn revive_events(&self, number: u64) -> ApiResult<(String, Vec<ReviveEvent>)> {
+        match self.revive_events_once(number).await {
+            Ok(v) => Ok(v),
+            Err(first) => {
+                self.rebuild().await?;
+                self.revive_events_once(number).await.map_err(|second| {
+                    ApiError::upstream(
+                        "substrate",
+                        format!(
+                            "revive events at {number}: {}; after reconnect: {}",
+                            first.message, second.message
+                        ),
+                    )
+                })
+            }
+        }
+    }
+
+    async fn revive_events_once(&self, number: u64) -> ApiResult<(String, Vec<ReviveEvent>)> {
         // Resolve number -> hash ourselves over plain JSON-RPC and hand subxt the
         // HASH. Only the number->hash lookup is backend-dependent: subxt's
         // chainHead backend refuses it outright ("The ChainHead V1 RPCs do not
@@ -240,11 +363,7 @@ impl Chain {
         }
         let want = H256::from_slice(&hash_bytes);
 
-        let at = self
-            .client
-            .at_block(want)
-            .await
-            .map_err(|e| ApiError::upstream("substrate", format!("at_block({hash_hex}): {e}")))?;
+        let at = self.at_block(want).await?;
         let block_hash = format!("0x{}", hex::encode(at.block_ref().hash().as_bytes()));
 
         let events = at
@@ -491,6 +610,19 @@ async fn build_legacy(url: &str) -> Result<OnlineClient<PolkadotConfig>, String>
     OnlineClient::<PolkadotConfig>::from_backend(Arc::new(backend))
         .await
         .map_err(|e| format!("subxt legacy backend over {url}: {e}"))
+}
+
+/// Legacy backend first, subxt autodetection only as a fallback.
+async fn build_any(url: &str) -> Result<(OnlineClient<PolkadotConfig>, String, Option<String>), String> {
+    match build_legacy(url).await {
+        Ok(c) => Ok((c, "legacy/WS".to_string(), None)),
+        Err(e1) => match OnlineClient::<PolkadotConfig>::from_insecure_url(url).await {
+            Ok(c) => Ok((c, "combined/WS (fallback)".to_string(), Some(e1))),
+            Err(e2) => Err(format!(
+                "cannot connect to Substrate RPC {url}: legacy: {e1}; combined: {e2}"
+            )),
+        },
+    }
 }
 
 /// subxt's RPC transport only speaks ws/wss; derive it from the http URL.

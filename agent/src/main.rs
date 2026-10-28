@@ -115,6 +115,11 @@ async fn health(State(st): State<Arc<AppState>>) -> Json<Value> {
         "uptime_s": st.started.elapsed().as_secs(),
         "subxt_backend": st.chain.backend,
         "substrate_methods": st.chain.methods,
+        "client": st.chain.client_status_now().map(|(b, age, rebuilds)| json!({
+            "backend": b,
+            "age_s": age,
+            "rebuilds": rebuilds,
+        })),
         "deep_check": "GET /ready — checks both upstream RPCs (may take 1–2 s)",
     }))
 }
@@ -159,6 +164,8 @@ async fn ready(State(st): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
             "substrate_ws": st.chain.ws_url,
             "subxt_backend": st.chain.backend,
             "subxt_backend_error": st.chain.backend_error,
+            "client_age_s": st.chain.client_status().await.1,
+            "client_rebuilds": st.chain.client_status().await.2,
             "substrate_methods": st.chain.methods,
             "evm_rpc": st.evm.url,
             "read_policy": "history: Substrate archive at block hash; current state: EVM eth_call/eth_getCode at 'latest' only",
