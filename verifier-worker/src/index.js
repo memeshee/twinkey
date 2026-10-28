@@ -104,6 +104,12 @@ async function handler(request) {
       {
         ok,
         head: sub.ok ? sub.head : null,
+        // Flattened aliases: the Rust service reported these names and the deploy
+        // script still reads them.
+        head_block: sub.ok ? sub.head : null,
+        evm_head_block: evm.ok ? evm.head : null,
+        client_age_s: 0,
+        client_rebuilds: 0,
         evm: evm.ok ? evm.head : null,
         service: SERVICE,
         version: VERSION,
