@@ -32,13 +32,16 @@ verify() {
 import sys, json
 d = json.load(sys.stdin)
 c = d.get("checks") or {}
+bad = []
 print("  /api/health       ok=%s degraded=%s head=%s git=%s" % (
     d.get("ok"), d.get("degraded"),
     (d.get("substrate") or {}).get("head"), d.get("git_sha_short")))
 for name in ("substrate", "evm", "verifier"):
     chk = c.get(name) or {}
     if not chk.get("ok"):
+        bad.append(name)
         print("  !! %s failing: %s" % (name, chk.get("detail") or "no detail"))
+sys.exit(1 if bad else 0)
 ' || ok=1
 
   curl -s -m 40 -X POST "$APP_URL/api/read" -H 'content-type: application/json' \

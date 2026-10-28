@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { PORTALDOT } from "@/lib/twinkey/config";
-import { apiAgeMs, evmRpc, getApi, isConnectionError, withDeadline } from "@/lib/twinkey/chain";
+import { apiAgeMs, evmRpc, isConnectionError, withDeadline } from "@/lib/twinkey/chain";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -41,13 +41,34 @@ export async function GET() {
 
   const [substrate, evm, verifier] = await Promise.all([
     timed(async () => {
-      const api = await getApi();
-      const [name, header] = await Promise.all([api.rpc.system.chain(), api.rpc.chain.getHeader()]);
-      return { chain: name.toString(), head: header.number.toNumber() };
-      // A cold lambda pays for a websocket handshake plus a runtime-metadata
-      // download before the first RPC answers; 6 s was enough to make a healthy
-      // chain look degraded on the first request after idle.
-    }, 14_000, "substrate ws"),
+      // Plain JSON-RPC over HTTP, deliberately: health must not pay for a websocket
+      // handshake plus a runtime-metadata download. A cold lambda made that take
+      // >14 s and reported a perfectly healthy chain as degraded — the first hit
+      // after every deploy. The shared socket has its own number (api_age_ms).
+      const res = await fetch(PORTALDOT.substrateHttp, {
+        method: "POST",
+        headers: { "content-type": "application/json", "user-agent": "twinkey-app/1.0" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "chain_getHeader", params: [] }),
+        signal: AbortSignal.timeout(9_000),
+      });
+      const json: any = await res.json();
+      if (json.error) throw new Error(`chain_getHeader: ${json.error.message ?? JSON.stringify(json.error)}`);
+      const head = Number(BigInt(json.result?.number ?? "0x0"));
+      let chain = "PortaldotV3 Test";
+      try {
+        const res2 = await fetch(PORTALDOT.substrateHttp, {
+          method: "POST",
+          headers: { "content-type": "application/json", "user-agent": "twinkey-app/1.0" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "system_chain", params: [] }),
+          signal: AbortSignal.timeout(6_000),
+        });
+        const j2: any = await res2.json();
+        if (typeof j2.result === "string") chain = j2.result;
+      } catch {
+        /* the chain name is decoration; the header is the check */
+      }
+      return { chain, head };
+    }, 16_000, "substrate http"),
     timed(async () => {
       // The EVM endpoint occasionally takes >10 s from a cold lambda and then
       // answers in 800 ms. One retry distinguishes "slow" from "down"; reporting a
