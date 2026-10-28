@@ -9,11 +9,11 @@ import {
   useAccount,
   useChainId,
   useConnect,
+  createConnector,
   useReadContract,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
-import { mock } from "wagmi/connectors/mock";
 
 import { TWINKEY_TOKEN_ADDRESS, TWINKEY_TOKEN_SYMBOL } from "@/lib/twinkey/token";
 
@@ -62,9 +62,53 @@ function twinKeyProvider() {
   };
 }
 
+/**
+ * A connector, not the framework's mock one.
+ *
+ * The mock connector carries its own stub provider, and a contract write routed through it dies
+ * with viem's generic "Missing or invalid parameters" — the write never reaches the chain.
+ * wagmi sends writes to the *connector's* provider, so the connector has to be the one that
+ * knows about ss58. That is the whole reason this file has a connector in it.
+ */
+const sharedProvider = twinKeyProvider();
+
+const twinKeyConnector = () =>
+  // wagmi types `connect` with a capability generic; every implementation in this repo (including
+  // the framework's own mock) ends up fighting it, so the shape is asserted once, here.
+  createConnector((config) => ({
+    id: "twinKey",
+    name: "TwinKey (ss58)",
+    type: "twinKey" as const,
+    async setup() {},
+    async connect(_parameters?: { chainId?: number; isReconnecting?: boolean; withCapabilities?: boolean }) {
+      return { accounts: [DEMO_H160] as const, chainId: PORTALDOT_EVM.id };
+    },
+    async disconnect() {},
+    async getAccounts() {
+      return [DEMO_H160] as const;
+    },
+    async getChainId() {
+      return PORTALDOT_EVM.id;
+    },
+    async isAuthorized() {
+      return true;
+    },
+    async switchChain({ chainId }: { chainId: number }) {
+      const chain = config.chains.find((c) => c.id === chainId);
+      if (!chain) throw new Error(`chain ${chainId} is not configured`);
+      return chain;
+    },
+    async getProvider() {
+      return sharedProvider;
+    },
+    onAccountsChanged() {},
+    onChainChanged() {},
+    onDisconnect() {},
+  }) as any);
+
 const wagmiConfig = createConfig({
   chains: [PORTALDOT_EVM],
-  connectors: [mock({ accounts: [DEMO_H160], features: { defaultConnected: true } })],
+  connectors: [twinKeyConnector()],
   transports: { [PORTALDOT_EVM.id]: custom(twinKeyProvider()) },
 });
 
@@ -72,13 +116,12 @@ const queryClient = new QueryClient();
 
 const CODE = `import { createConfig, WagmiProvider, useReadContract, useWriteContract } from "wagmi";
 import { custom, defineChain, erc20Abi } from "viem";
-import { mock } from "wagmi/connectors/mock";
 
 const chain = defineChain({ id: 420420777, name: "Portaldot V3 Test", … });
 
 const config = createConfig({
   chains: [chain],
-  connectors: [mock({ accounts: [H160], features: { defaultConnected: true } })],
+  connectors: [twinKeyConnector()],                    // reports the ss58 account
   transports: { [chain.id]: custom(twinKeyProvider()) },   // <- the only TwinKey line
 });
 
