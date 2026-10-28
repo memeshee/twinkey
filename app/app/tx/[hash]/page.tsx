@@ -3,7 +3,7 @@ import Link from "next/link";
 // A receipt is immutable once resolved; cache it rather than re-scanning.
 export const revalidate = 600;
 
-const VERIFIER = process.env.TWINKEY_VERIFIER_URL ?? "https://twinkey-verifier.onrender.com";
+const VERIFIER = process.env.TWINKEY_VERIFIER_URL ?? "https://twinkey-verifier.kiter0211.workers.dev";
 
 /**
  * /tx/:hash — a receipt that proves itself.

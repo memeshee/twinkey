@@ -20,7 +20,7 @@ verifier's verdict for block 90995.
 **The chain's traps, with the command that reproduces each:** <https://twinkey.vercel.app/pitfalls>
 (machine-readable: <https://twinkey.vercel.app/traps.json>)
 **ERC-20 written by the ss58 key:** `0x06f6e882ada6cd5cab74214ad90c3bd1b070e4e9` (TKT, 18 dec)
-**Verifier:** <https://twinkey-verifier.onrender.com/ready> (Rust, Render — free tier, so the first
+**Verifier:** <https://twinkey-verifier.kiter0211.workers.dev/ready> (Rust, Render — free tier, so the first
 request after an idle spell takes ~30–60 s to cold start). `/ready` is the deep check (both upstream
 RPCs, head block); `/health` is liveness only and answers from memory, because Render kills the
 instance when its own probe takes more than 5 s

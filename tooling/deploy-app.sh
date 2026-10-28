@@ -20,7 +20,7 @@ set -uo pipefail
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
 APP_URL="${TWINKEY_APP_URL:-https://twinkey.vercel.app}"
-VERIFY_URL="${TWINKEY_VERIFIER_URL:-https://twinkey-verifier.onrender.com}"
+VERIFY_URL="${TWINKEY_VERIFIER_URL:-https://twinkey-verifier.kiter0211.workers.dev}"
 
 health() { curl -s -m 90 "$APP_URL/api/health"; }
 

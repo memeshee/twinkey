@@ -8,7 +8,7 @@ import { TWINKEY_PROBE_ABI, TWINKEY_PROBE_ADDRESS } from "@/lib/twinkey/abi";
 // reads, everyone after gets it instantly.
 export const revalidate = 600;
 
-const VERIFIER = process.env.TWINKEY_VERIFIER_URL ?? "https://twinkey-verifier.onrender.com";
+const VERIFIER = process.env.TWINKEY_VERIFIER_URL ?? "https://twinkey-verifier.kiter0211.workers.dev";
 
 async function verifier(path: string): Promise<any> {
   try {

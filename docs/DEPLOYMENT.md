@@ -84,7 +84,7 @@ Same account, both runtimes, one signature.
 | Piece | Host | Detail |
 |---|---|---|
 | App | Vercel → <https://twinkey.vercel.app> | git-linked to `memeshee/twinkey` `main`; project **`rootDirectory` must be `app`** or the Git build cannot resolve `@/*` aliases |
-| Verifier | Render → <https://twinkey-verifier.onrender.com> | service `srv-dbb1lddg1s2s73duaeog`, rootDir `agent`, native Rust, `RUST_VERSION=1.90.0` |
+| Verifier | Render → <https://twinkey-verifier.kiter0211.workers.dev> | service `srv-dbb1lddg1s2s73duaeog`, rootDir `agent`, native Rust, `RUST_VERSION=1.90.0` |
 | Demo signer | Vercel env `PORTALDOT_SECRET_URI` | throwaway 5 tPOT account; the project key is never deployed |
 
 The verifier runs on Render's **free** plan, which sleeps after ~15 min idle. Two scheduled Hermes

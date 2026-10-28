@@ -68,7 +68,7 @@ browser ──▶ https://twinkey.vercel.app            Next.js app (Vercel, roo
                 ├── /api/state   ──▶ Substrate RPC (identity, head) + EVM RPC (contract state)
                 ├── /api/events  ──▶ Substrate System.Events scan, SCAN blocks cached
                 ├── /api/demo-write ─▶ revive.call signed by the throwaway demo account
-                └── /api/parity  ──▶ https://twinkey-verifier.onrender.com   (Rust, subxt)
+                └── /api/parity  ──▶ https://twinkey-verifier.kiter0211.workers.dev   (Rust, subxt)
 ```
 
 | Piece | Where | Notes |
@@ -86,19 +86,19 @@ triggered straight from GitHub then returned READY.
 Public proof, checked from outside this machine:
 
 ```
-$ curl https://twinkey-verifier.onrender.com/verify/block/90990
+$ curl https://twinkey-verifier.kiter0211.workers.dev/verify/block/90990
   event: Instantiated deployer 0xe70fd7e2…d934 contract 0x19d5aa10…7725
   current EVM state: read() = (value=31337, lastCaller=0xfd2d914e…62e7, callCount=8)
 
 $ curl https://twinkey.vercel.app/api/parity?block=90995
-  available: True   verifier: https://twinkey-verifier.onrender.com   verdict: True
+  available: True   verifier: https://twinkey-verifier.kiter0211.workers.dev   verdict: True
   ok  contract_has_code · ok  caller_is_mapped_signer · ok  state_consistent_with_event
 ```
 
 ## 2026-10-21 — the Render-only 503
 
 The first deployment's public proof above was collected from a laptop and did not hold on the
-host. `/verify/block/90990` and `/parity/90995` returned 503 on `twinkey-verifier.onrender.com`
+host. `/verify/block/90990` and `/parity/90995` returned 503 on `twinkey-verifier.kiter0211.workers.dev`
 with `The ChainHead V1 RPCs do not support obtaining a block hash from a number`, while the same
 binary answered correctly from this machine — the verifier's history path asked subxt to turn a
 block number into a hash, and which backend does that is decided from the node's method list *as

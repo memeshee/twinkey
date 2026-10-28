@@ -5,7 +5,7 @@ import { apiAgeMs, evmRpc, isConnectionError, withDeadline } from "@/lib/twinkey
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-const VERIFIER = process.env.TWINKEY_VERIFIER_URL ?? "https://twinkey-verifier.onrender.com";
+const VERIFIER = process.env.TWINKEY_VERIFIER_URL ?? "https://twinkey-verifier.kiter0211.workers.dev";
 
 type Check = {
   ok: boolean;
