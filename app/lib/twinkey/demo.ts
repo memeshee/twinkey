@@ -138,7 +138,7 @@ export const clientIp = (req: Request): string =>
  */
 export async function resolveExtrinsic(
   hash: string,
-  lookback = 40,
+  lookback = 120,
 ): Promise<{ blockNumber: number; blockHash: string; index: number; events: any[] } | null> {
   const { withApi } = await import("./chain");
   const { blake2AsHex } = await import("@polkadot/util-crypto");
