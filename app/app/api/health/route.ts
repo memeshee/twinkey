@@ -48,7 +48,16 @@ export async function GET() {
       // download before the first RPC answers; 6 s was enough to make a healthy
       // chain look degraded on the first request after idle.
     }, 14_000, "substrate ws"),
-    timed(() => evmRpc<string>("eth_blockNumber", []), 10_000, "evm rpc"),
+    timed(async () => {
+      // The EVM endpoint occasionally takes >10 s from a cold lambda and then
+      // answers in 800 ms. One retry distinguishes "slow" from "down"; reporting a
+      // healthy chain as degraded is its own kind of lie.
+      try {
+        return await evmRpc<string>("eth_blockNumber", []);
+      } catch {
+        return await evmRpc<string>("eth_blockNumber", []);
+      }
+    }, 18_000, "evm rpc"),
     timed(async () => {
       const res = await fetch(`${VERIFIER}/health`, { cache: "no-store", signal: AbortSignal.timeout(8_000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
