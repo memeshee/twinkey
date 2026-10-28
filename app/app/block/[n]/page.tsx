@@ -4,13 +4,15 @@ import { decodeLog } from "@/lib/twinkey/logs";
 import { scanRange } from "@/lib/twinkey/scan";
 import { TWINKEY_PROBE_ABI, TWINKEY_PROBE_ADDRESS } from "@/lib/twinkey/abi";
 
-export const dynamic = "force-dynamic";
+// A block never changes, so this page is cached: the first judge pays for the
+// reads, everyone after gets it instantly.
+export const revalidate = 600;
 
 const VERIFIER = process.env.TWINKEY_VERIFIER_URL ?? "https://twinkey-verifier.onrender.com";
 
 async function verifier(path: string): Promise<any> {
   try {
-    const res = await fetch(`${VERIFIER}${path}`, { cache: "no-store", signal: AbortSignal.timeout(25_000) });
+    const res = await fetch(`${VERIFIER}${path}`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
     return await res.json();
   } catch (e: any) {
     return { available: false, error: String(e?.message ?? e), verifier: VERIFIER };

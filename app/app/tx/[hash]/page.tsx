@@ -1,6 +1,7 @@
 import Link from "next/link";
 
-export const dynamic = "force-dynamic";
+// A receipt is immutable once resolved; cache it rather than re-scanning.
+export const revalidate = 600;
 
 const VERIFIER = process.env.TWINKEY_VERIFIER_URL ?? "https://twinkey-verifier.onrender.com";
 
@@ -37,7 +38,7 @@ export default async function TxPage({
       const target = block
         ? `${VERIFIER}/verify/block/${encodeURIComponent(block)}`
         : `${VERIFIER}/verify/tx/${normalised}`;
-      const res = await fetch(target, { cache: "no-store", signal: AbortSignal.timeout(30_000) });
+      const res = await fetch(target, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
       verdict = await res.json();
     } catch (e: any) {
       error = String(e?.message ?? e);
