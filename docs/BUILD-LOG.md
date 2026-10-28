@@ -187,10 +187,24 @@ seen, and the write may have been handled by a different lambda. `resolveExtrins
 
 ### Deploying the app, correctly
 
-`vercel deploy` from inside `app/` fails with `[NEXT_NO_VERSION]` — the project has
-`rootDirectory = app`, so the CLI uploads `app/` as the root *and* Vercel applies the setting,
-putting `package.json` one level too deep. `tooling/deploy-app.sh` deploys from the repo root
-and then verifies the routes a judge touches, because a green build is not proof.
+Both CLI modes fail, for different reasons:
+
+- from inside `app/`: `[NEXT_NO_VERSION]` — the project has `rootDirectory = app`, so the CLI
+  uploads `app/` as the root *and* Vercel applies the setting, putting `package.json` one level
+  too deep;
+- from the repo root: `File size limit exceeded (100 MB)` — the workspace contains
+  `agent/target`, which is 2.7 GB.
+
+The project is git-linked, so **pushing `main` is the deploy**. `tooling/deploy-app.sh` pushes,
+then polls `/api/health` until the live build reports `VERCEL_GIT_COMMIT_SHA == HEAD`, then checks
+`/`, `/viem`, `/pitfalls`, `/traps.json`, `/api/read`, `/api/estimate`, `/api/health` and the
+verifier — and fails the run if any of them is not green. A green build is not proof; a commit sha
+and a 200 are. `.vercelignore` exists so a CLI deploy cannot try to upload build artefacts.
+
+While wiring that up, `/api/health` was caught reporting a healthy chain as degraded on the first
+request after every deploy: the substrate check went through the cold websocket (handshake + 2 MB
+metadata, >14 s). It now asks `chain_getHeader` over plain JSON-RPC (~300 ms) and reports the
+shared socket's age separately.
 
 ### The viem claim, checked against production
 
