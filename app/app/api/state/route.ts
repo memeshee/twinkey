@@ -85,18 +85,46 @@ async function snapshot(ss58: string | null) {
   );
 }
 
+/**
+ * A chain read that times out is not an outage. The last good snapshot is kept
+ * for two minutes and served with `stale: true`, so a page load never turns a
+ * slow websocket handshake into a 503 — and the staleness is on the wire, not
+ * hidden. Only a cold process with nothing to serve returns 503.
+ */
+const lastGood = new Map<string, { value: any; at: number }>();
+const STALE_OK_MS = 120_000;
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const ss58 = url.searchParams.get("ss58") ?? process.env.PORTALDOT_DEMO_SS58 ?? null;
 
   const cached = memo(() => snapshot(ss58), 5_000);
+  const key = `state:${ss58 ?? "-"}`;
   try {
-    const { value, cached: hit } = await cached(`state:${ss58 ?? "-"}`);
-    return NextResponse.json({ ...value, cached: hit, apiAgeMs: apiAgeMs() });
+    const { value, cached: hit } = await cached(key);
+    lastGood.set(key, { value, at: Date.now() });
+    return NextResponse.json({ ...value, cached: hit, apiAgeMs: apiAgeMs(), stale: false });
   } catch (e: any) {
-    // The socket was rebuilt by this very request; the next one usually answers.
+    const prev = lastGood.get(key);
+    const ageMs = prev ? Date.now() - prev.at : Infinity;
+    if (prev && ageMs < STALE_OK_MS) {
+      // Same payload, honestly labelled: the reader can tell that the chain was
+      // not re-read for this answer.
+      return NextResponse.json({
+        ...prev.value,
+        cached: true,
+        apiAgeMs: apiAgeMs(),
+        stale: true,
+        staleAgeMs: ageMs,
+        warning: `chain re-read failed (${String(e?.message ?? e).slice(0, 120)}); serving a snapshot ${Math.round(ageMs / 1000)}s old`,
+      });
+    }
+    // Nothing to fall back to, and the socket was rebuilt by this very request.
     return NextResponse.json(
-      { error: String(e?.message ?? e), hint: "substrate socket was rebuilt — retry once" },
+      {
+        error: String(e?.message ?? e),
+        hint: prev ? "last good snapshot is older than 2 min — retry once" : "substrate socket was rebuilt — retry once",
+      },
       { status: 503 },
     );
   }
