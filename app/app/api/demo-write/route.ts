@@ -4,10 +4,31 @@ import { Keyring } from "@polkadot/api";
 import { cryptoWaitReady } from "@polkadot/util-crypto";
 import { encodeFunctionData } from "viem";
 
-import { getApi } from "@/lib/twinkey/chain";
+import { evmRpc, getApi, withDeadline } from "@/lib/twinkey/chain";
 import { createTwinKeyProvider } from "@/lib/twinkey/provider";
 import { keyringSigner } from "@/lib/twinkey/signers";
 import { TWINKEY_PROBE_ABI, TWINKEY_PROBE_ADDRESS } from "@/lib/twinkey/abi";
+
+const READ_SELECTOR = "0x57de26a4";
+
+/**
+ * Ground truth for "did this write land", independent of the websocket and of the
+ * response we managed to send. `callCount` increments on every successful call.
+ */
+async function chainState(): Promise<{ value: string; lastCaller: string; callCount: string } | null> {
+  try {
+    const raw = await evmRpc<string>("eth_call", [{ to: TWINKEY_PROBE_ADDRESS, data: READ_SELECTOR }, "latest"]);
+    if (!raw || raw === "0x") return null;
+    const hex = raw.slice(2).padStart(192, "0");
+    return {
+      value: BigInt("0x" + hex.slice(0, 64)).toString(),
+      lastCaller: "0x" + hex.slice(64 + 24, 128),
+      callCount: BigInt("0x" + hex.slice(128, 192)).toString(),
+    };
+  } catch {
+    return null;
+  }
+}
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -75,6 +96,7 @@ export async function POST(req: Request) {
     }
     const pair = new Keyring({ type: crypto as any, ss58Format: 42 }).addFromUri(uri!);
 
+    const before = await chainState();
     const api = await getApi();
     const provider = createTwinKeyProvider({ signer: keyringSigner(api, pair) });
     const [h160] = (await provider.request({ method: "eth_requestAccounts" })) as string[];
@@ -86,14 +108,46 @@ export async function POST(req: Request) {
     });
 
     const started = Date.now();
-    const txHash = (await provider.request({
-      method: "eth_sendTransaction",
-      params: [{ from: h160, to: TWINKEY_PROBE_ADDRESS, data, value: "0x0" }],
-    })) as string;
-    const receipt = await provider.request({ method: "eth_getTransactionReceipt", params: [txHash] });
+    // Submit inside its own budget: if the socket dies mid-flight the request
+    // fails as a labelled error instead of parking until the platform kills it.
+    const txHash = (await withDeadline(
+      provider.request({
+        method: "eth_sendTransaction",
+        params: [{ from: h160, to: TWINKEY_PROBE_ADDRESS, data, value: "0x0" }],
+      }),
+      40_000,
+      "revive.call submit",
+    )) as string;
+
+    let receipt: any = null;
+    try {
+      receipt = await withDeadline(
+        provider.request({ method: "eth_getTransactionReceipt", params: [txHash] }),
+        12_000,
+        "receipt",
+      );
+    } catch {
+      // The extrinsic is in: only the receipt was slow. Say that, with the hash.
+      const now = await chainState();
+      return NextResponse.json(
+        {
+          ok: true,
+          pending: true,
+          signedBy: pair.address,
+          mappedH160: h160,
+          txHash,
+          stateAfter: now,
+          elapsedMs: Date.now() - started,
+          path: "revive.call (native origin, sr25519 signature)",
+          note: "submitted — the receipt did not arrive inside this request. Reload: the event feed and callCount are the proof.",
+        },
+        { status: 202 },
+      );
+    }
+
     const after = await provider.request({
       method: "eth_call",
-      params: [{ to: TWINKEY_PROBE_ADDRESS, data: "0x57de26a4" }, "latest"],
+      params: [{ to: TWINKEY_PROBE_ADDRESS, data: READ_SELECTOR }, "latest"],
     });
 
     return NextResponse.json({
@@ -102,11 +156,23 @@ export async function POST(req: Request) {
       mappedH160: h160,
       txHash,
       receipt,
+      stateBefore: before,
       stateAfter: after,
       elapsedMs: Date.now() - started,
       path: "revive.call (native origin, sr25519 signature)",
     });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e), data: e?.data ?? null }, { status: 500 });
+    // A lost response is not a lost transaction. Before reporting failure, ask the
+    // chain: if callCount moved, the write landed and we say so.
+    const after = await chainState();
+    return NextResponse.json(
+      {
+        error: String(e?.message ?? e),
+        data: e?.data ?? null,
+        stateAfter: after,
+        note: "if callCount on /api/state moved past the value you saw, the extrinsic did land — the response was lost, not the transaction",
+      },
+      { status: 500 },
+    );
   }
 }

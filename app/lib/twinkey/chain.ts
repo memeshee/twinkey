@@ -3,27 +3,98 @@ import { decodeAddress } from "@polkadot/util-crypto";
 import { PORTALDOT } from "./config";
 
 /**
- * One shared connection per tab. WsProvider reconnects on its own; we only memoise the
- * promise so parallel callers do not open competing sockets.
+ * One shared connection per tab/instance.
+ *
+ * The memoised promise is not trusted blindly: a websocket that the node has
+ * closed still resolves to an `ApiPromise` object, so reusing it makes every
+ * later request hang until the platform timeout (the failure mode that took the
+ * demo down: `/api/state` answered `WebSocket is not connected` while the write
+ * route sat until Vercel killed it). `isConnected` is cheap, so it is checked
+ * before every use, and the socket is thrown away and rebuilt when it is false.
  */
 let apiPromise: Promise<ApiPromise> | null = null;
+let apiBuiltAt = 0;
 
-export function getApi(ws: string = PORTALDOT.substrateWs): Promise<ApiPromise> {
-  if (!apiPromise) {
-    apiPromise = ApiPromise.create({
-      provider: new WsProvider(ws),
-      noInitWarn: true,
-      throwOnConnect: true,
-    }).catch((e) => {
-      apiPromise = null;
-      throw e;
-    });
+export async function getApi(ws: string = PORTALDOT.substrateWs): Promise<ApiPromise> {
+  if (apiPromise) {
+    const current = await apiPromise.catch(() => null);
+    if (current?.isConnected) return current;
+    resetApi();
   }
+  apiBuiltAt = Date.now();
+  apiPromise = ApiPromise.create({
+    provider: new WsProvider(ws),
+    noInitWarn: true,
+    throwOnConnect: true,
+  }).catch((e) => {
+    apiPromise = null;
+    throw e;
+  });
   return apiPromise;
 }
 
 export function resetApi(): void {
   apiPromise = null;
+}
+
+export const apiAgeMs = (): number => (apiBuiltAt ? Date.now() - apiBuiltAt : -1);
+
+/** Anything that means "the socket, not the request, is the problem". */
+export function isConnectionError(e: unknown): boolean {
+  const msg = String((e as any)?.message ?? e ?? "");
+  return /websocket is not connected|failed ws request|connection (closed|lost)|restart required|disconnected|ECONNRESET|ECONNREFUSED|socket hang up|not connected/i.test(
+    msg,
+  );
+}
+
+/**
+ * Run `fn` against a connected api. If the failure is the socket rather than the
+ * request, rebuild the connection and run it once more. Request-level errors
+ * (bad ss58, missing account) are returned immediately — retrying those would
+ * only hide them.
+ */
+export async function withApi<T>(fn: (api: ApiPromise) => Promise<T>): Promise<T> {
+  try {
+    return await fn(await getApi());
+  } catch (e) {
+    if (!isConnectionError(e)) throw e;
+    resetApi();
+    return await fn(await getApi());
+  }
+}
+
+/** Reject instead of hanging: a serverless function must fail inside its budget. */
+export async function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const guard = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} did not finish within ${ms} ms`)), ms);
+  });
+  try {
+    return await Promise.race([p, guard]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** Tiny in-process TTL cache: judges refresh, lambdas do not need to re-scan. */
+export function memo<T>(fn: () => Promise<T>, ttlMs: number, key = "default") {
+  const store = ((globalThis as any).__twinkeyMemo ??= new Map<string, { at: number; value: T; inflight?: Promise<T> }>());
+  return async (k: string = key): Promise<{ value: T; cached: boolean }> => {
+    const entry = store.get(k);
+    const now = Date.now();
+    if (entry && now - entry.at < ttlMs) return { value: entry.value, cached: true };
+    if (entry?.inflight) return { value: await entry.inflight, cached: false };
+    const inflight = fn();
+    store.set(k, { at: now, value: entry?.value as T, inflight });
+    try {
+      const value = await inflight;
+      store.set(k, { at: Date.now(), value });
+      return { value, cached: false };
+    } catch (e) {
+      store.delete(k);
+      throw e;
+    }
+  };
 }
 
 /** Raw JSON-RPC against the EVM endpoint. It is CORS-open (access-control-allow-origin: *). */
