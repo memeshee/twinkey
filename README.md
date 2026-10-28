@@ -16,6 +16,7 @@ verifier's verdict for block 90995.
 
 **Live demo:** <https://twinkey.vercel.app>
 **Unmodified viem against a JSON-RPC endpoint:** <https://twinkey.vercel.app/viem>
+**wagmi v3, one transport line different:** <https://twinkey.vercel.app/wagmi>
 **The chain's traps, with the command that reproduces each:** <https://twinkey.vercel.app/pitfalls>
 (machine-readable: <https://twinkey.vercel.app/traps.json>)
 **ERC-20 written by the ss58 key:** `0x06f6e882ada6cd5cab74214ad90c3bd1b070e4e9` (TKT, 18 dec)

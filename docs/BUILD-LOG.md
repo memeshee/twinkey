@@ -232,3 +232,33 @@ that is a test artifact, not a chain failure.
 Also fixed after watching the deployed host: `/api/health` called the chain degraded when the EVM
 endpoint took >10 s on a cold lambda, and `/api/receipt` returned an empty body because the
 hash scan was 240 serial RPCs. The probe now retries once, and the scan reads blocks 24 at a time.
+
+### wagmi v3, and the connector nobody warns you about
+
+`/wagmi` runs a stock wagmi v3 config — `createConfig`, `useReadContract`, `useWriteContract`,
+`useWaitForTransactionReceipt`, `erc20Abi` — with one TwinKey line:
+
+```ts
+transports: { [chain.id]: custom(twinKeyProvider()) }
+```
+
+Reads worked immediately. The write failed with viem's `Missing or invalid parameters`, and the
+cause was not the transport: **wagmi sends writes to the connector's provider, not the config's
+transport.** The framework's own `mock` connector carries a stub provider, so `eth_sendTransaction`
+never left the browser. The fix is a connector that reports the mapped H160 and returns the TwinKey
+provider from `getProvider()`:
+
+```ts
+createConnector((config) => ({
+  id: "twinKey", name: "TwinKey (ss58)", type: "twinKey",
+  async connect() { return { accounts: [H160], chainId: chain.id }; },
+  async getAccounts() { return [H160]; },
+  async getChainId() { return chain.id; },
+  async getProvider() { return twinKeyProvider(); },
+  …
+}))
+```
+
+Measured in a real browser after the fix: tx `0x23bbf181…676a`, block 231662, `status success`,
+1 log, balance 4995 → 4994 TKT — wagmi decoded a `Transfer` out of a receipt built from an
+extrinsic hash the EVM node has never seen.

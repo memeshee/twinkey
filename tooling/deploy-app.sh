@@ -52,7 +52,7 @@ sys.exit(1 if bad else 0)
     -d '{"to":"0x19d5aa109cbf0d4e0a126f1438ea73b619cb7725","data":"0x552410770000000000000000000000000000000000000000000000000000000000001092"}' |
     python3 -c 'import sys,json; d=json.load(sys.stdin); print("  /api/estimate     ratio=%s" % d.get("ratio_evm_over_runtime"))' || ok=1
 
-  for path in / /viem /pitfalls /traps.json; do
+  for path in / /viem /wagmi /pitfalls /traps.json; do
     code=$(curl -s -o /dev/null -w '%{http_code}' -m 60 "$APP_URL$path") || code=000
     printf "  %-17s HTTP %s\n" "$path" "$code"
     [ "$code" = "200" ] || ok=1
