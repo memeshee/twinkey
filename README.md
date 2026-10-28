@@ -218,9 +218,18 @@ MIT. Portaldot Hacker House 2026 submission.
 
 ## Package
 
-`packages/twinkey-provider` is the provider as a library — `createTwinKeyProvider`,
-`keyringSigner`, `extensionSigner`, `fromExtension`, `getApi`, the decimals helpers and the
-probe ABI. Build it with `npm run build` inside that directory (tsup, ESM + CJS + d.ts).
+```bash
+npm i twinkey-provider
+```
+
+[`twinkey-provider`](https://www.npmjs.com/package/twinkey-provider) is the provider as a
+library — `createTwinKeyProvider`, `keyringSigner`, `extensionSigner`, `fromExtension`, `getApi`,
+the decimals helpers and the probe ABI (ESM + CJS + `.d.ts`, 21 kB, no build step for consumers).
+Source lives in `packages/twinkey-provider`.
+
+Verified from the registry, not from this checkout: a clean `npm i twinkey-provider` in an empty
+directory returns `eth_chainId 0x190f1ca9`, maps the demo ss58 to `0xfd2d…62e7`, and reads a
+balance that round-trips through the 14/18-decimal conversion exactly.
 
 The provider is also exposed at runtime as `window.twinKey` on the deployed app, so the
 extension-facing path can be inspected without installing anything.

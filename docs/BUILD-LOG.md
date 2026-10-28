@@ -262,3 +262,24 @@ createConnector((config) => ({
 Measured in a real browser after the fix: tx `0x23bbf181…676a`, block 231662, `status success`,
 1 log, balance 4995 → 4994 TKT — wagmi decoded a `Transfer` out of a receipt built from an
 extrinsic hash the EVM node has never seen.
+
+### Publishing to npm: npm 12 stages, and a bypass token cannot unpublish
+
+`npm publish` on npm 12.0.2 for an account with 2FA did not publish — it **staged**. The registry
+recorded a `0.0.0-stage` placeholder whose own description is "Temporary package placeholder for
+staged publishing", and the real `0.1.0` sat behind it, so every later attempt failed with
+`409 Cannot publish over previously staged version`. `npm stage list` reported no staged packages,
+and `npm stage approve` demands a UUID that was never printed, so approval was not reachable from
+the CLI. Bumping the version (`0.1.1`) went straight through.
+
+Two more things worth knowing:
+
+- The first token in `~/.hermes/keys/npm-granular-token` was granular but `bypass_2fa: false`, which
+  publishes fail on with `403 … Two-factor authentication or granular access token with bypass 2fa
+  enabled is required`. `GET /-/npm/v1/tokens` is the fast way to check that flag.
+- Granular tokens with 2FA bypass are **not allowed to unpublish** (`403 … may not perform this
+  action`), so the `0.0.0-stage` placeholder stays on the package page. Cosmetic, not broken.
+
+Verified from the registry afterwards — a clean `npm i twinkey-provider` in an empty directory
+printed `eth_chainId 0x190f1ca9`, mapped `5He7dv…UAHZ` to `0xfd2d…62e7`, and round-tripped a
+balance through 14/18 decimals exactly.

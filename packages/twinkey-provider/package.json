@@ -1,6 +1,6 @@
 {
   "name": "twinkey-provider",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "EIP-1193 provider that lets an ordinary ss58 key drive Portaldot from viem, wagmi or ethers: reads go to the EVM JSON-RPC, writes become sr25519-signed revive.call extrinsics.",
   "license": "MIT",
   "type": "module",
