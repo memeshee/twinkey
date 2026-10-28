@@ -13,6 +13,20 @@ path that works, and this provider is the difference between knowing that and li
 npm i twinkey-provider
 ```
 
+## Install from GitHub Packages
+
+The canonical package is also published to GitHub Packages, where it appears under
+this repository (`memeshee/twinkey`):
+
+```bash
+npm config set @memeshee:registry https://npm.pkg.github.com
+npm install @memeshee/twinkey-provider   # needs a GitHub token with read:packages
+```
+
+GitHub Packages requires authentication even for public reads, which is why the
+unauthenticated one-liner stays on npm: `npm i twinkey-provider`.
+
+
 ## Browser: whatever Substrate wallet is installed
 
 ```ts

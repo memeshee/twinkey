@@ -216,6 +216,9 @@ itself and in the README at submission time.
 
 MIT. Portaldot Hacker House 2026 submission.
 
+Published on **GitHub Packages** as `@memeshee/twinkey-provider` (see this repo's Packages
+section) and on npm as `twinkey-provider`.
+
 ## Package
 
 ```bash
