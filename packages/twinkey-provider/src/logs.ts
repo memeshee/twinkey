@@ -55,6 +55,11 @@ export function emittedToLogs(
 /**
  * Decode a log against an ABI. Returns null instead of throwing: a provider must never break a
  * caller because it does not have the right ABI for someone else's contract.
+ *
+ * A *partial* decode also returns null. viem's non-strict mode will happily name an event from
+ * `topics[0]` alone and hand back an empty args object, which is worse than no answer at all:
+ * the caller cannot tell `callCount: undefined` from a contract that genuinely returned nothing,
+ * and a truncated `ContractEmitted` payload would look like a successful decode.
  */
 export function decodeLog(
   log: Pick<EvmLog, "topics" | "data">,
@@ -67,7 +72,19 @@ export function decodeLog(
       topics: log.topics as [`0x${string}`, ...`0x${string}`[]],
       strict: false,
     }) as unknown as { eventName: string; args: Record<string, unknown> };
-    return { eventName: decoded.eventName, args: normaliseArgs(decoded.args) };
+    const args = normaliseArgs(decoded.args);
+
+    const fragment = (abi as readonly any[]).find(
+      (item) => item?.type === "event" && item?.name === decoded.eventName,
+    );
+    for (const input of fragment?.inputs ?? []) {
+      // Unnamed inputs are positional in viem's output, so they cannot be checked by name.
+      if (typeof input?.name === "string" && input.name.length > 0 && args[input.name] === undefined) {
+        return null;
+      }
+    }
+
+    return { eventName: decoded.eventName, args };
   } catch {
     return null;
   }

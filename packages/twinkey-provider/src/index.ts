@@ -17,6 +17,7 @@ export { extensionSigner, extractEmitted, keyringSigner } from "./signers";
 export { evmRpc, getApi, resetApi } from "./chain";
 export { PORTALDOT, formatNative, formatWei, nativeToWei, weiToNative } from "./config";
 export { TWINKEY_PROBE_ABI, TWINKEY_PROBE_ADDRESS } from "./abi";
+export { decodeLog, emittedToLogs, toHex } from "./logs";
 export type { EvmLog, RawContractEmitted } from "./logs";
 
 /**

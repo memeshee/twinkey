@@ -155,6 +155,33 @@ cargo run --release               # http://localhost:8088/verify/block/90990
 
 Exact commands and their output are in [`docs/BUILD-LOG.md`](docs/BUILD-LOG.md).
 
+## Testing
+
+The monorepo root has the test entry points, so a judge does not have to know which subdirectory
+holds what:
+
+```bash
+npm test            # 12 deterministic checks — no network, no chain
+npm run test:live   # the same 12 plus 5 assertions against the DEPLOYED system
+npm run verify      # typecheck the app, then run the live suite
+```
+
+- `tests/unit.config.test.mjs` — chain id in both representations, the 14/18-decimal split as an
+  exact 10^4 ratio, a real balance round-tripping native → wei → native with no precision loss, and
+  formatting that never drops the integer part.
+- `tests/unit.logs.test.mjs` — the `revive.ContractEmitted` decoder, run against a log built by hand
+  from the ABI (encoding it with the same library that decodes it would prove nothing). Covers a
+  real `ValueSet`, an unknown topic0, a truncated payload, and per-transaction `logIndex` assignment.
+- `tests/live.chain.test.mjs` — skipped unless `TWINKEY_LIVE=1`, because these are assertions about
+  the deployment rather than this checkout: the app is healthy, `5DML…Bko9C7` still resolves to
+  `0xe70f…d934` through the runtime API, the probe contract is deployed with a non-zero `callCount`,
+  the independent verifier puts both runtimes at the same height with `verdict: true`, and the
+  published package is installable. **If the deployment rots, `npm run test:live` fails** — that is
+  the point of it.
+
+`npm test` rebuilds `packages/twinkey-provider` first, so the unit tests exercise the same bundle a
+consumer installs from npm.
+
 ## Verification — what is real, what is not
 
 | Claim | State |
