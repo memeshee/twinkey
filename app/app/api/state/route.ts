@@ -103,7 +103,11 @@ export async function GET(req: Request) {
   try {
     const { value, cached: hit } = await cached(key);
     lastGood.set(key, { value, at: Date.now() });
-    return NextResponse.json({ ...value, cached: hit, apiAgeMs: apiAgeMs(), stale: false });
+    return NextResponse.json(
+      { ...value, cached: hit, apiAgeMs: apiAgeMs(), stale: false },
+      // A judge refreshing five times should cost one chain snapshot, not five cold sockets.
+      { headers: { "Cache-Control": "public, s-maxage=5, stale-while-revalidate=25" } },
+    );
   } catch (e: any) {
     const prev = lastGood.get(key);
     const ageMs = prev ? Date.now() - prev.at : Infinity;

@@ -48,7 +48,7 @@ async function run(fromParam: number | null, lookback: number, toParam: number |
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const lookback = Number(url.searchParams.get("lookback") ?? "300");
+  const lookback = Number(url.searchParams.get("lookback") ?? "120");
   const fromParam = url.searchParams.get("from");
   const toParam = url.searchParams.get("to");
 
@@ -58,11 +58,11 @@ export async function GET(req: Request) {
   if ((from !== null && !Number.isFinite(from)) || (to !== null && !Number.isFinite(to))) {
     return NextResponse.json({ error: "invalid range" }, { status: 400 });
   }
-  if (from !== null && to !== null && to - from > 1200) {
-    return NextResponse.json({ error: "range too wide: max 1200 blocks per query" }, { status: 400 });
+  if (from !== null && to !== null && to - from > 600) {
+    return NextResponse.json({ error: "range too wide: max 600 blocks per query" }, { status: 400 });
   }
 
-  const cached = memo(() => run(from, lookback, to), 20_000);
+  const cached = memo(() => run(from, lookback, to), 60_000);
   try {
     const { value, cached: hit } = await cached(`events:${from ?? "L" + lookback}:${to ?? "head"}`);
     return NextResponse.json({ ...value, cached: hit });

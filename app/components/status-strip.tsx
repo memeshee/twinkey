@@ -40,10 +40,22 @@ export default function StatusStrip() {
     }
   }, []);
 
+  // Poll gently, and never from a tab nobody is looking at: this strip used to fetch every 30 s
+  // forever, and every one of those fetches was a billed function invocation. Browsers already
+  // throttle hidden tabs, but not consistently, and not at all when the tab is on a second monitor.
   useEffect(() => {
     check();
-    const id = setInterval(check, 30_000);
-    return () => clearInterval(id);
+    const id = setInterval(() => {
+      if (!document.hidden) check();
+    }, 120_000);
+    const onVisible = () => {
+      if (!document.hidden) check();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [check]);
 
   const label: Record<string, string> = {

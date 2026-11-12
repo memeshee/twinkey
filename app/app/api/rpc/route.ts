@@ -58,8 +58,14 @@ export async function POST(req: Request) {
     NextResponse.json({ jsonrpc: "2.0", id, error: { code, message, ...(data ? { data } : {}) } });
 
   if (FORWARD.has(method)) {
+    // Reads were unlimited: this endpoint is a public JSON-RPC URL, so any client (or any crawler
+    // that found it) could point at it and bill every call to this project. A generous per-IP cap
+    // keeps a real viem/ethers demo working and stops it being a free RPC relay.
+    if (rateLimited(`read:${clientIp(req)}`, 240, 60_000)) {
+      return fail(-32005, "rate limited: 240 read calls per minute per IP");
+    }
     try {
-      const { evmRpc } = await import("@/lib/twinkey/chain");
+      const { evmRpc } = await import("@/lib/twinkey/http");
       return reply(await evmRpc(method, params));
     } catch (e: any) {
       return fail(-32000, String(e?.message ?? e));

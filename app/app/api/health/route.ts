@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { PORTALDOT } from "@/lib/twinkey/config";
-import { apiAgeMs, evmRpc, isConnectionError, withDeadline } from "@/lib/twinkey/chain";
+import { apiAgeMs, evmRpc, isConnectionError, withDeadline } from "@/lib/twinkey/http";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -121,6 +121,11 @@ export async function GET() {
       },
       total_ms: Date.now() - started,
     },
-    { status: degraded.length === 0 ? 200 : 207 },
+    {
+      status: degraded.length === 0 ? 200 : 207,
+      // This answer is a probe of things that move in seconds, so 15 s of edge cache loses nothing —
+      // and it means ten tabs polling, or one tab reloading, cost one invocation instead of ten.
+      headers: { "Cache-Control": "public, s-maxage=15, stale-while-revalidate=45" },
+    },
   );
 }
