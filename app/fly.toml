@@ -24,10 +24,15 @@ primary_region = "sin"
 [http_service]
   internal_port = 3000
   force_https = true
-  # "stop" rather than "suspend": a snapshot resume is faster (~0.7 s) but it restores a process whose
-  # websocket to the chain is already dead, and this app's whole point is reading the chain. A clean
-  # boot costs a couple of seconds and starts with a socket that works.
-  auto_stop_machines = "stop"
+  # Measured on this app (2026-11-13, shared-cpu-1x 1GB, sin):
+  #   "stop"    -> autostop at 7 min idle, first request after wake 6.84 s  (a Node + Next boot)
+  #   "suspend" -> resume from a memory snapshot in about a second, but it restores a process whose
+  #                websocket to the chain is already dead. That is the trade this app can afford
+  #                *only because* lib/twinkey/chain.ts checks `isConnected` and rebuilds the socket
+  #                on the next read, so a resumed machine answers a chain read instead of erroring.
+  # Verify that path after any change here: wake a suspended machine, then curl /api/state and read
+  # the payload — a resume that returns `WebSocket is not connected` means the rebuild logic regressed.
+  auto_stop_machines = "suspend"
   auto_start_machines = true
   min_machines_running = 0
 
