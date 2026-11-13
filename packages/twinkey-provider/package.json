@@ -37,7 +37,7 @@
     "url": "git+https://github.com/memeshee/twinkey.git",
     "directory": "packages/twinkey-provider"
   },
-  "homepage": "https://twinkey.fly.dev",
+  "homepage": "https://github.com/memeshee/twinkey/tree/main/packages/twinkey-provider#readme",
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --clean",
     "prepublishOnly": "npm run build"
