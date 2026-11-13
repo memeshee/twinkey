@@ -42,23 +42,31 @@ export const markApiBuilt = (): void => {
 export const apiAgeMs = (): number => (apiBuiltAt ? Date.now() - apiBuiltAt : -1);
 
 /** Tiny in-process TTL cache: judges refresh, lambdas do not need to re-scan. */
-export function memo<T>(fn: () => Promise<T>, ttlMs: number, key = "default") {
-  const store = ((globalThis as any).__twinkeyMemo ??= new Map<string, { at: number; value: T; inflight?: Promise<T> }>());
-  return async (k: string = key): Promise<{ value: T; cached: boolean }> => {
-    const entry = store.get(k);
-    const now = Date.now();
-    if (entry && now - entry.at < ttlMs) return { value: entry.value, cached: true };
-    if (entry?.inflight) return { value: await entry.inflight, cached: false };
-    const inflight = fn();
-    store.set(k, { at: now, value: entry?.value as T, inflight });
-    try {
-      const value = await inflight;
-      store.set(k, { at: Date.now(), value });
-      return { value, cached: false };
-    } catch (e) {
-      store.delete(k);
-      throw e;
-    }
+export function memo<T>(fn: () => Promise<T>, ttlMs: number) {
+  const values = ((globalThis as any).__twinkeyMemoV ??= new Map<string, { at: number; value: T }>());
+  const inflight = ((globalThis as any).__twinkeyMemoP ??= new Map<string, Promise<T>>());
+
+  return async (k = "default"): Promise<{ value: T; cached: boolean }> => {
+    const hit = values.get(k);
+    if (hit && Date.now() - hit.at < ttlMs) return { value: hit.value, cached: true };
+
+    // One computation per key, and every caller gets its result. The previous version stored the
+    // entry BEFORE the work finished, with `value: undefined`, so a second request that arrived
+    // during the first one's flight was told "cached" and handed `undefined` — the route then spread
+    // that into its JSON (`{...undefined, cached: true}`), the page received a body with no fields,
+    // and rendering it threw `Cannot read properties of undefined (reading 'toLocaleString')`.
+    // A caller must never receive a value this function did not compute or read.
+    const pending = inflight.get(k);
+    if (pending) return { value: await pending, cached: false };
+
+    const p = fn()
+      .then((value) => {
+        values.set(k, { at: Date.now(), value });
+        return value;
+      })
+      .finally(() => inflight.delete(k));
+    inflight.set(k, p);
+    return { value: await p, cached: false };
   };
 }
 

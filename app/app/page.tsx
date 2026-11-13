@@ -103,21 +103,28 @@ export default function Page() {
       setScanning(true);
       setScanError(null);
       try {
-        const head = state?.chain.head;
+        const head = state?.chain?.head;
         const from = head ? Math.max(0, head - lookback) : undefined;
         const qs = from ? `?from=${from}&to=${head}` : `?lookback=${lookback}`;
         const res = await fetch(`/api/events${qs}`, { cache: "no-store" });
         const json = await res.json();
         if (json.error) throw new Error(json.error + (json.hint ? ` — ${json.hint}` : ""));
         setEvents(json.events ?? []);
-        setScanMeta({ from: json.from, to: json.to, scanned: json.scanned });
+        // Only record a range the page can print. An answer without numbers used to become
+        // `undefined.toLocaleString()` in the render and unmounted the whole page.
+        if (Number.isFinite(json.from) && Number.isFinite(json.to)) {
+          setScanMeta({ from: json.from, to: json.to, scanned: json.scanned });
+        } else {
+          setScanMeta(null);
+          setScanError("the scan answered without a block range — press rescan");
+        }
       } catch (e: any) {
         setScanError(String(e?.message ?? e));
       } finally {
         setScanning(false);
       }
     },
-    [state?.chain.head],
+    [state?.chain?.head],
   );
 
   useEffect(() => {
@@ -456,8 +463,14 @@ receipt     /tx/${lastWrite.txHash}${lastWrite.blockNumber ? `\nblock view  /blo
             </button>
           )}
           {state && (
-            <button onClick={() => runVerify(state.chain.head)} disabled={!!verifying}>
-              {verifying === `parity:${state.chain.head}` && <span className="spin" />}
+            <button
+              onClick={() => {
+                const head = state?.chain?.head;
+                if (typeof head === "number") runVerify(head);
+              }}
+              disabled={!!verifying || typeof state?.chain?.head !== "number"}
+            >
+              {verifying === `parity:${state?.chain?.head}` && <span className="spin" />}
               verify head
             </button>
           )}

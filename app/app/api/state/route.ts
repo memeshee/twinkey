@@ -102,6 +102,11 @@ export async function GET(req: Request) {
   const key = `state:${ss58 ?? "-"}`;
   try {
     const { value, cached: hit } = await cached(key);
+    // A body without `chain` is not a snapshot; caching it as "last good" would keep serving the
+    // shape that crashed the client.
+    if (!value || !(value as any).chain) {
+      throw new Error("snapshot produced no chain state");
+    }
     lastGood.set(key, { value, at: Date.now() });
     return NextResponse.json(
       { ...value, cached: hit, apiAgeMs: apiAgeMs(), stale: false },

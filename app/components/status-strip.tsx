@@ -70,7 +70,7 @@ export default function StatusStrip() {
         <div className="row" style={{ gap: 10 }}>
           <span style={{ color: "var(--muted)", fontSize: 12.5 }}>upstreams</span>
           {health ? (
-            Object.entries(health.checks).map(([name, c]) => (
+            Object.entries(health.checks ?? {}).map(([name, c]) => (
               <span
                 key={name}
                 className={`badge ${c.ok ? "ok" : "warn"}`}

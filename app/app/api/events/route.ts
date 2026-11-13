@@ -65,6 +65,14 @@ export async function GET(req: Request) {
   const cached = memo(() => run(from, lookback, to), 60_000);
   try {
     const { value, cached: hit } = await cached(`events:${from ?? "L" + lookback}:${to ?? "head"}`);
+    // Defence in depth behind `memo`: a 200 whose body is `{cached:false}` makes a client render
+    // `undefined.toLocaleString()` and take the whole page down. A labelled 503 is recoverable.
+    if (!value || typeof (value as any).from !== "number" || typeof (value as any).to !== "number") {
+      return NextResponse.json(
+        { error: "scan produced no range", hint: "retry once" },
+        { status: 503 },
+      );
+    }
     return NextResponse.json({ ...value, cached: hit });
   } catch (e: any) {
     return NextResponse.json(
