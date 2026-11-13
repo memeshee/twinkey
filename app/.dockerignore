@@ -1,0 +1,9 @@
+# Nothing here needs to be uploaded to the builder: the image is built from the lockfile.
+node_modules
+.next
+.git
+.vercel
+*.tsbuildinfo
+Dockerfile
+.dockerignore
+README.md
