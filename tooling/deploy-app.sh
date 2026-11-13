@@ -95,6 +95,11 @@ fi
 
 short=$(echo "$want" | cut -c1-7)
 echo "deploy-app: deploying $short to $APP_NAME (remote builder)"
+# fly.toml and the Dockerfile live in app/, and Fly resolves `dockerfile` against the build context
+# (the working directory). Deploying from the repo root instead of here fails with
+# "dockerfile '/…/Dockerfile' not found" — and, before it fails, uploads a 4.8 GB context (agent/ is
+# 3.3 GB of Rust build artefacts). Deploy from the directory that owns the config.
+cd app || exit 1
 # The commit sha is a secret so the running process can report it; staged first so the deploy applies it.
 "$FLYCTL" secrets set GIT_SHA="$want" --app "$APP_NAME" --stage >/dev/null || exit 1
 "$FLYCTL" deploy --remote-only --app "$APP_NAME" --no-cache || exit 1
