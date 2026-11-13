@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const LIVE = process.env.TWINKEY_LIVE === "1";
-const APP = process.env.TWINKEY_APP ?? "https://twinkey.vercel.app";
+const APP = process.env.TWINKEY_APP ?? "https://twinkey.fly.dev";
 const VERIFIER = process.env.TWINKEY_VERIFIER ?? "https://twinkey-verifier.kiter0211.workers.dev";
 
 const PROJECT_SS58 = "5DMLUzwxrQsPwc9dsjz4WUVSy4qryn2xWhtvv4RDkjBko9C7";

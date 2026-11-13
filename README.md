@@ -14,16 +14,20 @@ The screenshot above is the deployed app: both faces of one account resolved fro
 contract state over `eth_call`, a real write, decoded `revive.ContractEmitted` events, and the independent
 verifier's verdict for block 90995.
 
-**Live demo:** <https://twinkey.vercel.app>
-**Unmodified viem against a JSON-RPC endpoint:** <https://twinkey.vercel.app/viem>
-**wagmi v3, one transport line different:** <https://twinkey.vercel.app/wagmi>
-**The chain's traps, with the command that reproduces each:** <https://twinkey.vercel.app/pitfalls>
-(machine-readable: <https://twinkey.vercel.app/traps.json>)
+**Live demo:** <https://twinkey.fly.dev>
+**Unmodified viem against a JSON-RPC endpoint:** <https://twinkey.fly.dev/viem>
+**wagmi v3, one transport line different:** <https://twinkey.fly.dev/wagmi>
+**The chain's traps, with the command that reproduces each:** <https://twinkey.fly.dev/pitfalls>
+(machine-readable: <https://twinkey.fly.dev/traps.json>)
 **ERC-20 written by the ss58 key:** `0x06f6e882ada6cd5cab74214ad90c3bd1b070e4e9` (TKT, 18 dec)
-**Verifier:** <https://twinkey-verifier.kiter0211.workers.dev/ready> (Cloudflare Worker — stateless, no cold start, so the first
-request after an idle spell takes ~30–60 s to cold start). `/ready` is the deep check (both upstream
-RPCs, head block); `/health` is liveness only and answers from memory, because Render kills the
-instance when its own probe takes more than 5 s
+**Verifier:** <https://twinkey-verifier.kiter0211.workers.dev/ready> — a Cloudflare Worker: stateless
+HTTPS JSON-RPC, no websocket, no cold start to speak of. `/ready` is the deep check (both upstream
+RPCs, head block); `/health` answers from memory.
+
+The app itself runs on **Fly.io** (`twinkey.fly.dev`) as a scale-to-zero container: the machine stops
+when nobody is asking and boots in a couple of seconds on the next request. `/api/ping` is the wake
+path — it answers from process memory and touches nothing, so a client can fire it while the reader is
+still on the first screen.
 
 The deployed instance runs the write path with a **dedicated throwaway demo account**
 (`5He7dvDWyMs7DAiAVBsfczFZPEKVa5tAQwLQjNTSq3beUAHZ` → `0xfd2d914e…62e7`), funded with 5 tPOT and
@@ -120,7 +124,8 @@ dApp can onboard its first user.
                                           /verify/:tx, /parity/:tx
 ```
 
-- Web app: Next.js (App Router) + TypeScript + Tailwind, deployed on Vercel.
+- Web app: Next.js (App Router) + TypeScript + Tailwind, deployed on Fly.io (`app/fly.toml`,
+  `output: "standalone"`, scale to zero).
 - Signer + chain access: `@polkadot/api`, `@polkadot/extension-dapp`, `viem` for encoding.
 - Verifier: Cloudflare Worker (stateless HTTPS JSON-RPC, no websocket) — reads the chain independently of the browser and returns
   a verdict a judge can `curl`.

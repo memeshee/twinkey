@@ -63,7 +63,7 @@ $ curl -sX POST localhost:3000/api/demo-write -d '{"value":31337,"action":"set"}
 ## Deployment
 
 ```
-browser ──▶ https://twinkey.vercel.app            Next.js app (Vercel, rootDirectory=app)
+browser ──▶ https://twinkey.fly.dev            Next.js app (Vercel, rootDirectory=app)
                 │
                 ├── /api/state   ──▶ Substrate RPC (identity, head) + EVM RPC (contract state)
                 ├── /api/events  ──▶ Substrate System.Events scan, SCAN blocks cached
@@ -73,9 +73,9 @@ browser ──▶ https://twinkey.vercel.app            Next.js app (Vercel, roo
 
 | Piece | Where | Notes |
 |---|---|---|
-| app | Vercel, git-linked to `memeshee/twinkey` main | `rootDirectory` **must** be `app` or the Git build fails to resolve `@/*` aliases |
-| verifier | Render, `srv-dbb1lddg1s2s73duaeog`, rootDir `agent` | native Rust runtime, free plan, `RUST_VERSION=1.90.0`, cold start ~30–60 s |
-| demo signer | env `PORTALDOT_SECRET_URI` on Vercel | separate 5 tPOT throwaway account; the project key is never deployed |
+| app | Fly.io, <https://twinkey.fly.dev> | container from `app/Dockerfile`, scale to zero (`min_machines_running = 0`); see the 2026-11-13 entry below for why it moved twice |
+| verifier | Cloudflare Worker, <https://twinkey-verifier.kiter0211.workers.dev> | plain module worker, HTTPS JSON-RPC only — no socket, no cold start |
+| demo signer | Fly secret `PORTALDOT_SECRET_URI` | separate 5 tPOT throwaway account; the project key is never deployed |
 
 The Vercel failure that looked like "missing module `@/lib/twinkey/extension`" was a project-config
 problem: the file was committed, but with no `rootDirectory` the Git build ran `next build` from the
@@ -90,7 +90,7 @@ $ curl https://twinkey-verifier.kiter0211.workers.dev/verify/block/90990
   event: Instantiated deployer 0xe70fd7e2…d934 contract 0x19d5aa10…7725
   current EVM state: read() = (value=31337, lastCaller=0xfd2d914e…62e7, callCount=8)
 
-$ curl https://twinkey.vercel.app/api/parity?block=90995
+$ curl https://twinkey.fly.dev/api/parity?block=90995
   available: True   verifier: https://twinkey-verifier.kiter0211.workers.dev   verdict: True
   ok  contract_has_code · ok  caller_is_mapped_signer · ok  state_consistent_with_event
 ```
@@ -213,7 +213,7 @@ deployed endpoint:
 
 ```
 $ npx tsx scripts/viem-prod-check.ts
-rpc        https://twinkey.vercel.app/api/rpc
+rpc        https://twinkey.fly.dev/api/rpc
 account    0xFd2d914Eefc568C86F907E29E02dbd2C51C462e7
 token      TKT at 0x06f6e882ada6cd5cab74214ad90c3bd1b070e4e9
 balance    4998
@@ -311,3 +311,46 @@ Two node quirks this cost, both measured:
 `TWINKEY_VERIFIER_URL` is the only thing that had to change in the app — and note it is
 a *Secret* env var, so a code default alone will not move it.
 
+
+## 2026-11-13 — the app leaves Vercel: 2.3 s of cold CPU per invocation, then two hosts
+
+The free-tier bill arrived as a number, not a mystery: **3 h 26 m of Fluid Active CPU at 94.6 %** of
+the monthly allowance. Traffic was not the cause — runtime logs over ~50 minutes showed 33 requests
+total (`/api/health` 12, `/api/state` 9, `/api/events` 4, pages 3, `/api/parity` 2, `/api/rpc` 1),
+with an automated health+state pair every 10.9 minutes and no flood, loop or crawler storm.
+
+The cause was cost per invocation, measured on this machine:
+
+```
+import "@polkadot/api"  ->  cpu = 2266 ms      (WASM crypto + type registry at module load)
+import "viem"           ->  cpu =  408 ms
+```
+
+12,360 CPU-seconds ÷ 2.27 s ≈ **5,400 cold invocations** of a chain-touching route. Every one of them
+paid the WASM tax before doing any work, and `/api/health` — the most-invoked route, polled by every
+visible tab — imported `@/lib/twinkey/chain` for four helpers that need no chain at all.
+
+What changed in the code (commit `24f5e79`):
+
+- `lib/twinkey/http.ts`: the HTTP-shaped half (`withDeadline`, `isConnectionError`, `memo`, `evmRpc`,
+  socket age) with no `@polkadot/api` in the module graph; `chain.ts` re-exports it so call sites are
+  unchanged. New rule: **a route that does not open a websocket must not import `./chain`.**
+- `/api/health` on that path plus `s-maxage=15`; `/api/state` `s-maxage=5`; `/api/events` default
+  lookback 300 → 120, window cap 1200 → 600, memo 20 s → 60 s; `/api/rpc` reads capped at 240/min per
+  IP (it is a public CORS-open JSON-RPC URL and reads were unlimited).
+- status strip: 30 s → 120 s, and paused while `document.hidden`.
+
+Then the host question, which the same measurement answered:
+
+| Host | Outcome |
+|---|---|
+| Vercel | fixed app still couldn't justify the quota; project deleted |
+| Render free | hosted it unchanged, `/api/ping` measured **32.7 s** on a cold start — worse than the problem being solved; service deleted |
+| **Fly.io** | a container, billed for machine time: `auto_stop_machines = "stop"`, `min_machines_running = 0`, 1 GB, region `sin` |
+
+Deployment surface added: `app/next.config.mjs` → `output: "standalone"`, `app/Dockerfile`
+(deps → build → runner, unprivileged, `CMD node server.js`), `app/.dockerignore`, `app/fly.toml`, and
+`tooling/deploy-app.sh` rewritten to `flyctl deploy --remote-only` + a `GIT_SHA` secret so the live
+process reports its own commit. `/api/ping` was added for platforms whose probe budget is 5 s
+(Render killed the instance when `/api/health` — three upstream calls — missed it); it answers from
+process memory and is also the cheapest way for a client to wake a stopped machine.

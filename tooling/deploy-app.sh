@@ -1,28 +1,37 @@
 #!/usr/bin/env bash
-# Ship the Next.js app and prove the live build is the one you pushed.
+# Ship the Next.js app to Fly and prove the live build is the one you pushed.
 #
-# Two ways to break this, both hit for real:
+# History that shaped this script, so it does not get re-learned:
 #
-#  1. `vercel deploy` from inside app/ fails with [NEXT_NO_VERSION]: the project has
-#     rootDirectory = app, so the CLI uploads app/ as the root AND Vercel applies the
-#     setting — package.json ends up one level too deep.
-#  2. `vercel deploy` from the repo root uploads the workspace: agent/target alone is
-#     2.7 GB, and the CLI aborts at "File size limit exceeded (100 MB)".
+#  - Vercel's free tier could not carry the app: every cold invocation of a route that touches
+#    `@polkadot/api` pays ~2.3 s of CPU just to load the WASM crypto, and Active CPU is the metered
+#    resource. The project was deleted.
+#  - Render's free plan hosted it unchanged but sleeps after 15 min idle, and the wake cost ~30 s.
+#  - Fly runs the process in a container and bills only while a request needs it
+#    (`auto_stop_machines = "stop"`, `min_machines_running = 0`); the wake is a couple of seconds.
 #
-# So this does not use the CLI. The project is git-linked: pushing main starts the
-# build. This script pushes, waits for the deployment to report the commit it built
-# (the app exposes VERCEL_GIT_COMMIT_SHA on /api/health), then checks the routes a
-# judge actually touches. A green build is not proof; a commit sha and a 200 are.
+# The deploy is not the proof. The proof is the commit sha the live process reports plus a 200 on the
+# routes a judge touches, which is what `verify()` below asks for.
 #
-#   ./tooling/deploy-app.sh            # push if needed, wait for that build, verify
+#   ./tooling/deploy-app.sh            # push, deploy, wait for that commit to be live, verify
 #   ./tooling/deploy-app.sh --verify   # verify whatever is live right now
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
-APP_URL="${TWINKEY_APP_URL:-https://twinkey.vercel.app}"
+APP_NAME="${TWINKEY_FLY_APP:-twinkey}"
+APP_URL="${TWINKEY_APP_URL:-https://${APP_NAME}.fly.dev}"
 VERIFY_URL="${TWINKEY_VERIFIER_URL:-https://twinkey-verifier.kiter0211.workers.dev}"
+FLYCTL="${FLYCTL:-$HOME/.fly/bin/flyctl}"
 
-health() { curl -s -m 90 "$APP_URL/api/health"; }
+health() { curl -s -m 120 "$APP_URL/api/health"; }
+
+# A stopped machine answers the first request only after it boots; retry once so a cold start reads
+# as a cold start and not as a dead deployment.
+wake() {
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' -m 120 "$APP_URL/api/ping" || echo 000)
+  echo "deploy-app: /api/ping -> $code (a stopped machine boots here)"
+}
 
 verify() {
   echo "deploy-app: verifying $APP_URL"
@@ -44,16 +53,16 @@ for name in ("substrate", "evm", "verifier"):
 sys.exit(1 if bad else 0)
 ' || ok=1
 
-  curl -s -m 40 -X POST "$APP_URL/api/read" -H 'content-type: application/json' \
+  curl -s -m 60 -X POST "$APP_URL/api/read" -H 'content-type: application/json' \
     -d '{"to":"0x19d5aa109cbf0d4e0a126f1438ea73b619cb7725","data":"0x57de26a4"}' |
     python3 -c 'import sys,json; d=json.load(sys.stdin); print("  /api/read         ok=%s result=%s" % (d.get("ok"), (d.get("result") or "")[:18]))' || ok=1
 
-  curl -s -m 120 -X POST "$APP_URL/api/estimate" -H 'content-type: application/json' \
+  curl -s -m 150 -X POST "$APP_URL/api/estimate" -H 'content-type: application/json' \
     -d '{"to":"0x19d5aa109cbf0d4e0a126f1438ea73b619cb7725","data":"0x552410770000000000000000000000000000000000000000000000000000000000001092"}' |
     python3 -c 'import sys,json; d=json.load(sys.stdin); print("  /api/estimate     ratio=%s" % d.get("ratio_evm_over_runtime"))' || ok=1
 
   for path in / /viem /wagmi /pitfalls /traps.json; do
-    code=$(curl -s -o /dev/null -w '%{http_code}' -m 60 "$APP_URL$path") || code=000
+    code=$(curl -s -o /dev/null -w '%{http_code}' -m 90 "$APP_URL$path") || code=000
     printf "  %-17s HTTP %s\n" "$path" "$code"
     [ "$code" = "200" ] || ok=1
   done
@@ -85,23 +94,27 @@ else
 fi
 
 short=$(echo "$want" | cut -c1-7)
-echo "deploy-app: waiting for a deployment of $short (Vercel builds on push)"
+echo "deploy-app: deploying $short to $APP_NAME (remote builder)"
+# The commit sha is a secret so the running process can report it; staged first so the deploy applies it.
+"$FLYCTL" secrets set GIT_SHA="$want" --app "$APP_NAME" --stage >/dev/null || exit 1
+"$FLYCTL" deploy --remote-only --app "$APP_NAME" --no-cache || exit 1
+
+echo "deploy-app: waiting for $short to answer"
 live=""
-for i in $(seq 1 40); do
+for i in $(seq 1 20); do
   live=$(health | python3 -c 'import sys,json
 try: print(json.load(sys.stdin).get("git_sha_short") or "")
 except Exception: print("")' 2>/dev/null)
   if [ "$live" = "$short" ]; then
-    echo "deploy-app: live build is $short (after ~$((i * 15))s)"
-    sleep 3
+    echo "deploy-app: live build is $short (after ~$((i * 10))s)"
     verify
     exit $?
   fi
   printf '.'
-  sleep 15
+  sleep 10
 done
 
 echo
 echo "deploy-app: timed out waiting for $short to go live (last seen: ${live:-none})"
-echo "            check https://vercel.com/memeshe-s-projects/twinkey/deployments"
+echo "            check $("$FLYCTL" status --app "$APP_NAME" 2>&1 | head -5)"
 exit 1

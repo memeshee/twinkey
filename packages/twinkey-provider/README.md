@@ -117,4 +117,4 @@ Events: `connect`, `accountsChanged`, `chainChanged`, `disconnect` — standard 
 
 MIT. Built for Portaldot Hacker House 2026; the underlying findings are in
 [`docs/FINDINGS.md`](https://github.com/memeshee/twinkey/blob/main/docs/FINDINGS.md) and the
-reproducible traps in [`/traps.json`](https://twinkey.vercel.app/traps.json).
+reproducible traps in [`/traps.json`](https://twinkey.fly.dev/traps.json).

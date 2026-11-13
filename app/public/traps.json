@@ -20,7 +20,7 @@
       "check": "POST /api/estimate {to, data} → evm_estimate.gas vs runtime_dry_run.gasConsumed",
       "cost": "Measured live on 2026-10-28: 570,540,468,341 vs 50,604,168 — 11,274×. A 401 tPOT wallet cannot cover a 50k-gas call priced at 5.7e11.",
       "workaround": "Use ReviveApi_call's dry run: it returns weightRequired {refTime, proofSize} and storageDeposit.charge, which is exactly what revive.call consumes — and unused weight is refunded.",
-      "evidence": "https://twinkey.vercel.app/api/estimate · docs/BUILD-LOG.md",
+      "evidence": "https://twinkey.fly.dev/api/estimate · docs/BUILD-LOG.md",
       "severity": "blocking"
     },
     {

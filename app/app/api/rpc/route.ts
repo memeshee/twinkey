@@ -132,6 +132,6 @@ export async function GET() {
       ],
     },
     example:
-      'curl -s -X POST https://twinkey.vercel.app/api/rpc -H "content-type: application/json" -d \'{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}\'',
+      'curl -s -X POST https://twinkey.fly.dev/api/rpc -H "content-type: application/json" -d \'{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}\'',
   });
 }

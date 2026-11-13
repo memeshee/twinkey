@@ -8,7 +8,7 @@
 // between them is the runtime.
 import { createPublicClient, createWalletClient, http, erc20Abi, formatUnits } from "viem";
 
-const RPC = process.argv[2] ?? "https://twinkey.vercel.app/api/rpc";
+const RPC = process.argv[2] ?? "https://twinkey.fly.dev/api/rpc";
 const TOKEN = "0x06f6e882ada6cd5cab74214ad90c3bd1b070e4e9" as const;
 const TO = "0xe70fd7e24a9eee0d3a7302866e0e1e9597f4d934" as const;
 

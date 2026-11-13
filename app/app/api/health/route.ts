@@ -5,6 +5,11 @@ import { apiAgeMs, evmRpc, isConnectionError, withDeadline } from "@/lib/twinkey
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
+// One build identity, whichever host is running this: `GIT_SHA` is set at deploy time
+// (a Fly secret), and the Vercel var is the fallback for the old deployment.
+const GIT_SHA =
+  process.env.GIT_SHA ?? process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.RENDER_GIT_COMMIT ?? "";
+
 const VERIFIER = process.env.TWINKEY_VERIFIER_URL ?? "https://twinkey-verifier.kiter0211.workers.dev";
 
 type Check = {
@@ -107,10 +112,16 @@ export async function GET() {
       // Which build is answering. Vercel sets these on every deployment, so a
       // "did my push actually ship?" question has a factual answer instead of an
       // assumption about build queues.
-      git_sha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
-      git_sha_short: (process.env.VERCEL_GIT_COMMIT_SHA ?? "").slice(0, 7) || null,
-      git_ref: process.env.VERCEL_GIT_COMMIT_REF ?? null,
-      deployment_url: process.env.VERCEL_URL ?? null,
+      git_sha: GIT_SHA || null,
+      git_sha_short: GIT_SHA.slice(0, 7) || null,
+      git_ref: process.env.GIT_REF ?? null,
+      // Where this process believes it is running. Fly sets FLY_*; Vercel's names are still
+      // read so an old deployment of this file keeps reporting something true.
+      deployment_url: process.env.FLY_APP_NAME
+        ? `${process.env.FLY_APP_NAME}.fly.dev`
+        : (process.env.VERCEL_URL ?? null),
+      region: process.env.FLY_REGION ?? null,
+      machine: process.env.FLY_MACHINE_ID ?? null,
       api_age_ms: apiAgeMs(),
       demo_signing: Boolean(process.env.PORTALDOT_KEY || process.env.PORTALDOT_SECRET_URI),
       config: {

@@ -83,21 +83,23 @@ Same account, both runtimes, one signature.
 
 | Piece | Host | Detail |
 |---|---|---|
-| App | Vercel → <https://twinkey.vercel.app> | git-linked to `memeshee/twinkey` `main`; project **`rootDirectory` must be `app`** or the Git build cannot resolve `@/*` aliases |
-| Verifier | Render → <https://twinkey-verifier.kiter0211.workers.dev> | service `srv-dbb1lddg1s2s73duaeog`, rootDir `agent`, native Rust, `RUST_VERSION=1.90.0` |
-| Demo signer | Vercel env `PORTALDOT_SECRET_URI` | throwaway 5 tPOT account; the project key is never deployed |
+| App | Fly.io → <https://twinkey.fly.dev> | container from `app/Dockerfile` (`output: "standalone"`, `CMD node server.js`); `fly.toml` sets region `sin`, 1 GB, `auto_stop_machines = "stop"`, `min_machines_running = 0` |
+| Verifier | Cloudflare Worker → <https://twinkey-verifier.kiter0211.workers.dev> | `verifier-worker/`, plain module worker on the free tier; every fact comes over HTTPS JSON-RPC, so there is no socket to die |
+| Demo signer | Fly secret `PORTALDOT_SECRET_URI` | throwaway 5 tPOT account; the project key is never deployed |
 
-The verifier runs on Render's **free** plan, which sleeps after ~15 min idle. Two scheduled Hermes
-cron jobs manage the judged window — both are `no_agent` shell jobs that report their result:
+`GIT_SHA` is a second Fly secret, set by `tooling/deploy-app.sh` on every deploy so the live process
+reports the commit it was built from on `/api/health` and `/api/ping`.
 
-- `79d58f8162f0` — **2026-10-24 12:00 UTC** (check-in): flips the service to **Starter**. No cold
-  start, and it hands the workspace's 750 shared free hours back to the other two free services on
-  that account (`confidant-demo`, `fieldday`).
-- `184771508622` — **2026-11-14 00:00 UTC+7**: returns it to **free**.
+### Why Fly, after two hosts that did not fit
 
-While it is on the free plan, job `9f31c3cc865d` pings `/health` every 10 minutes so a judge never
-waits out a cold start; it is silent unless the verifier is unhealthy. If you stop needing the demo,
-remove all three jobs before the free-hour pool matters again.
+| Host | What went wrong |
+|---|---|
+| Vercel (free) | Fluid Active CPU is metered and every cold invocation of a route touching `@polkadot/api` pays ~2.3 s of it just to load the WASM crypto — measured locally, see `docs/BUILD-LOG.md`. The quota went to 94.6 %, and the project was deleted. |
+| Render (free) | Runs the app unchanged, but sleeps after ~15 min idle and the wake costs ~30 s — too slow to be a demo. |
+| **Fly.io** | Bills machine time, not CPU. `auto_stop_machines = "stop"` means an idle app costs its rootfs, and a boot is a couple of seconds. "stop" rather than "suspend" because a snapshot restores a process whose websocket to the node is already dead. |
+
+No keepalive job is needed on either host now: the verifier is a Worker (always answers), and the app
+is meant to sleep. `/api/ping` exists for clients that want to wake it early.
 
 ### The Render-only failure (2026-10-21), and what removed it
 

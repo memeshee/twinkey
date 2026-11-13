@@ -22,8 +22,9 @@ export async function GET() {
       service: "twinkey",
       uptime_s: Math.round((Date.now() - started) / 1000),
       // Same build identity the product reports, so "which commit is live" has one answer.
-      git_sha: process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.RENDER_GIT_COMMIT ?? null,
-      git_sha_short: (process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.RENDER_GIT_COMMIT ?? "").slice(0, 7) || null,
+      git_sha: process.env.GIT_SHA ?? null,
+      git_sha_short: (process.env.GIT_SHA ?? "").slice(0, 7) || null,
+      region: process.env.FLY_REGION ?? null,
     },
     { headers: { "Cache-Control": "no-store" } },
   );
