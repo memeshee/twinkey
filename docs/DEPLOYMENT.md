@@ -96,7 +96,8 @@ reports the commit it was built from on `/api/health` and `/api/ping`.
 |---|---|
 | Vercel (free) | Fluid Active CPU is metered and every cold invocation of a route touching `@polkadot/api` pays ~2.3 s of it just to load the WASM crypto — measured locally, see `docs/BUILD-LOG.md`. The quota went to 94.6 %, and the project was deleted. |
 | Render (free) | Runs the app unchanged, but sleeps after ~15 min idle and the wake costs ~30 s — too slow to be a demo. |
-| **Fly.io** | Bills machine time, not CPU. `auto_stop_machines = "stop"` means an idle app costs its rootfs, and a boot is a couple of seconds. "stop" rather than "suspend" because a snapshot restores a process whose websocket to the node is already dead. |
+| **Fly.io** | Bills machine time, not CPU. `auto_stop_machines = "stop"`, `min_machines_running = 0`: an idle app costs its rootfs. Measured with zero traffic — autostop fires at **7 min**, and the request that wakes it takes **6.84 s** (Node + Next boot), after which `/` is 0.17 s, `/api/health` 0.51 s, `/api/state` 2.78 s, warm `/api/ping` 0.14 s. |
+| Fly.io, `"suspend"` | **Tried and rejected, 2026-11-13.** The machine never idled in 16 min (process uptime 993 s at the end), so it would have been billed around the clock, and a request landing during a suspend transition hung for the full 240 s client timeout. A theory-cheaper mode that fails to sleep *and* can hang a request is worse than a 6.84 s boot. |
 
 No keepalive job is needed on either host now: the verifier is a Worker (always answers), and the app
 is meant to sleep. `/api/ping` exists for clients that want to wake it early.

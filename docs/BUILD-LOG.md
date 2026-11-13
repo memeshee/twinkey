@@ -346,7 +346,7 @@ Then the host question, which the same measurement answered:
 |---|---|
 | Vercel | fixed app still couldn't justify the quota; project deleted |
 | Render free | hosted it unchanged, `/api/ping` measured **32.7 s** on a cold start — worse than the problem being solved; service deleted |
-| **Fly.io** | a container, billed for machine time: `auto_stop_machines = "stop"`, `min_machines_running = 0`, 1 GB, region `sin` |
+| **Fly.io** | a container, billed for machine time: `auto_stop_machines = "stop"`, `min_machines_running = 0`, 1 GB, region `sin`. Measured with zero traffic: autostop at 7 min idle, first request after the boot **6.84 s**, then `/` 0.17 s, `/api/health` 0.51 s, `/api/state` 2.78 s, warm `/api/ping` 0.14 s |
 
 Deployment surface added: `app/next.config.mjs` → `output: "standalone"`, `app/Dockerfile`
 (deps → build → runner, unprivileged, `CMD node server.js`), `app/.dockerignore`, `app/fly.toml`, and
@@ -354,3 +354,22 @@ Deployment surface added: `app/next.config.mjs` → `output: "standalone"`, `app
 process reports its own commit. `/api/ping` was added for platforms whose probe budget is 5 s
 (Render killed the instance when `/api/health` — three upstream calls — missed it); it answers from
 process memory and is also the cheapest way for a client to wake a stopped machine.
+
+### The suspend attempt (same day, rejected)
+
+`auto_stop_machines = "suspend"` looked like the obvious win: a memory snapshot instead of a Node
+boot. It was measured the same way — deploy, then no traffic at all, polling only the Fly API (which
+does not wake the app):
+
+```
+minute 1..16   machine state = started          # never idled
+uptime_s at minute 16                             993 s
+/api/ping     200   0.71 s
+/api/state    200   0.88 s
+/api/health   000   240.00 s   <- hung for the whole client timeout
+```
+
+Two failures, either of which disqualifies the mode: it never went to sleep (so the app would be
+billed 24/7, which is the entire reason it left Vercel), and a request that arrived during a suspend
+transition hung for 240 s. Reverted to `"stop"` at commit `708db4c`→ next commit, with the numbers
+written next to the setting so the next person does not re-derive them from theory.
