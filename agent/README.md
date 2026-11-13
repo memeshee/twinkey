@@ -1,3 +1,8 @@
+> **Not deployed any more.** The verifier that runs is the Cloudflare Worker in
+> [`verifier-worker/`](../verifier-worker) — stateless HTTPS JSON-RPC, no websocket to go stale.
+> This Rust service is kept because the failure it hit on Render (and the `state_getStorage`
+> reads it needed) is the reason the Worker exists; see `docs/BUILD-LOG.md`, 2026-10-21.
+
 # TwinKey verifier
 
 Independent HTTP verifier for TwinKey receipts on **Portaldot V3**.
